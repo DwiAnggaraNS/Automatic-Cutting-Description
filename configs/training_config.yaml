@@ -1,0 +1,59 @@
+# ============================================================
+# Automatic Cutting Description — Training Configuration
+# ============================================================
+
+# --------------- Dataset ---------------
+dataset:
+  version: "C_2026_1d80_10_10_AUG"
+  # Paths are resolved at runtime based on environment (colab/local)
+  colab_root: "/content/drive/MyDrive/Colab Notebooks/TA_CuttingRockDescription/datasets"
+  local_root: "~/projects/DwiAnggara/Datasets"
+
+# --------------- Model ---------------
+model:
+  architecture: "yolov12m-seg.pt"
+  download_url: "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12m-seg.pt"
+  single_class: false
+
+# --------------- Training ---------------
+training:
+  runner_name: "YOLOv12m_RG_Latest"
+  target_epochs: 150
+  batch_size: 6
+  img_size: 960
+  patience: 50           # Early stopping patience (epochs without improvement)
+  device: "auto"         # "auto" | "cpu" | "cuda" | "mps"
+  workers: 4
+  seed: 42
+  amp: true              # Automatic Mixed Precision
+
+# --------------- Augmentation ---------------
+augmentation:
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  flipud: 0.0
+  fliplr: 0.5
+  mosaic: 1.0
+  mixup: 0.0
+
+# --------------- History ---------------
+history:
+  name: "history_yolov12m_rg_latest"
+  file: "training_history.txt"
+
+# --------------- Classes ---------------
+classes:
+  names:
+    0: "CLAS - Silt"
+    1: "CLAS - Loose Sand"
+    2: "CLAS - Sandstone"
+    3: "CARB - Limestone"
+    4: "CLAS - Loose Sandy and Silt"
+    5: "CLAS - Loose Silt"
+    6: "CARB - Loose Limestone"
+    7: "CLAS - Coal"
+  minority_ids: [1, 4, 5, 6]   # Classes used for synthetic augmentation

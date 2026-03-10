@@ -45,8 +45,9 @@ automatic-cutting-description/
 │   ├── evaluation/
 │   │   └── Independent_Evaluator.ipynb  # Model evaluation & metrics
 │   └── exploration/
-│       ├── YOLO_Visualizer.ipynb        # Training visualization & comparison
-│       └── SAM_AutomaticMaskGenerator.ipynb  # SAM mask generation pipeline
+│       ├── YOLO_Visualizer.ipynb              # Training visualization & comparison
+│       ├── 01_sam_auto_segmentation.ipynb     # SAM automatic mask generation
+│       └── 02_cvat_converter.ipynb            # Convert SAM output → CVAT XML
 │
 ├── scripts/                        # Utility scripts
 │   ├── data_preprocessing/
@@ -92,6 +93,34 @@ model: "yolov12m-seg.pt"
 ### 3. Run Training
 
 Open `notebooks/training/YOLO_Trainer.ipynb` and click **Run All Cells**.
+
+---
+
+## Semi-Automatic Labeling Workflow
+
+Proses anotasi menggunakan SAM di luar CVAT untuk efisiensi pada gambar dengan 100+ objek:
+
+```mermaid
+flowchart TD
+    A["📁 Raw Images\n./images/"] --> B
+
+    B["🔧 Persiapan\nCopy SAM weights dari Nuclio container\ndocker cp nuclio-...-sam-vit-h:/opt/nuclio/*.pth"] --> C
+
+    C["🤖 01_sam_auto_segmentation.ipynb\nSAM AutomaticMaskGenerator\n─────────────────────────\nLoad sam_vit_h (sekali)\nLoop gambar satu per satu\nFilter: area + pred_iou + stability\nTop-K: simpan 150 mask terbaik\nMask → Polygon (Douglas-Peucker)\nSimpan ./sam_output/*.json"] --> D
+
+    D["🔄 02_cvat_converter.ipynb\nKonversi ke CVAT XML\n─────────────────────────\nFetch frame list dari CVAT REST API\nAssign dummy label 'rock'\nBuild CVAT XML 1.1\nSimpan ./cvat_import/annotations.xml"] --> E
+
+    E["📤 Import ke CVAT\nUpload annotations.xml\nFormat: CVAT 1.1\nTask ID dari URL browser"] --> F
+
+    F["✏️ Refinement Manual di CVAT\n─────────────────────────\nUbah label 'rock' → kelas final\nPerbaiki polygon yang salah\nHapus false positive\nTambah objek yang terlewat"]
+
+    style A fill:#e8f4f8
+    style C fill:#fff3cd
+    style D fill:#fff3cd
+    style F fill:#d4edda
+```
+
+> Panduan lengkap: [SAM Semi-Automatic Annotation Guide](docs/guides/sam_autoannotation.md)
 
 ---
 
@@ -145,8 +174,7 @@ notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & metrics)
 | Document | Description |
 |----------|-------------|
 | [YOLO Trainer Guide](docs/guides/YOLO_Trainer_Guide.md) | Training workflow & configuration |
-| [CVAT + SAM Installation Guide](docs/guides/CVAT_SAM_Installation_Guide.md) | Annotation toolchain setup |
-| [YOLO Trainer Structure](docs/YOLO_Trainer_Structure.md) | Notebook architecture reference |
+| [CVAT + SAM Installation Guide](docs/guides/CVAT_SAM_Installation_Guide.md) | Annotation toolchain setup || [SAM Semi-Automatic Annotation Guide](docs/guides/sam_autoannotation.md) | Pipeline SAM → CVAT untuk anotasi massal || [YOLO Trainer Structure](docs/YOLO_Trainer_Structure.md) | Notebook architecture reference |
 
 ---
 

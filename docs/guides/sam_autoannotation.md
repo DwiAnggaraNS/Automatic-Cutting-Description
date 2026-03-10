@@ -1,57 +1,104 @@
-# Semi-Automatic Rock Annotation Pipeline: SAM Automatic Mask Generator → CVAT
+# Semi-Automatic Rock Annotation: SAM AutomaticMaskGenerator → CVAT
+
+> Panduan lengkap untuk melakukan anotasi semi-otomatis menggunakan SAM di luar CVAT,
+> kemudian mengimpor hasilnya ke CVAT untuk refinement manual.
 
 ---
 
-## 1. Pipeline Overview
+## Daftar Isi
 
-The core inefficiency with SAM inside CVAT is that it requires a point prompt per object — for images with 100+ small rocks, this is untenable. The solution is to bypass CVAT's interactive SAM endpoint entirely and use SAM's `SamAutomaticMaskGenerator` externally, which runs a dense grid of prompts across the whole image in one pass.
+1. [Mengapa Semi-Otomatis?](#1-mengapa-semi-otomatis)
+2. [Alur Pipeline](#2-alur-pipeline)
+3. [Persiapan: SAM Weights dari Nuclio](#3-persiapan-sam-weights-dari-nuclio)
+4. [Instalasi Library](#4-instalasi-library)
+5. [Struktur Folder](#5-struktur-folder)
+6. [Step 1 — SAM Auto Segmentation](#6-step-1--sam-auto-segmentation)
+7. [Step 2 — Konversi ke CVAT XML](#7-step-2--konversi-ke-cvat-xml)
+8. [Step 3 — Import ke CVAT](#8-step-3--import-ke-cvat)
+9. [Step 4 — Refinement di CVAT](#9-step-4--refinement-di-cvat)
+10. [Troubleshooting](#10-troubleshooting)
+
+---
+
+## 1. Mengapa Semi-Otomatis?
+
+SAM di dalam CVAT membutuhkan **satu klik per objek** untuk menghasilkan segmentasi. Pada gambar batu dengan 100+ objek per frame, ini tidak efisien.
+
+Solusinya: gunakan `SamAutomaticMaskGenerator` di luar CVAT. Mode ini menjalankan grid prompt yang rapat di seluruh gambar dalam **satu kali pass**, menghasilkan semua objek sekaligus secara otomatis. Hasilnya dikonversi ke format CVAT XML dan diimpor massal — annotator hanya perlu **mengubah label** dan **memperbaiki polygon yang salah**.
+
+---
+
+## 2. Alur Pipeline
 
 ```
-Raw Image Folder
-      │
-      ▼
-Script 1: SAM AutomaticMaskGenerator
-  ├── Load sam_vit_h weights (once)
-  ├── Loop images sequentially (memory-safe)
-  ├── Filter masks by area, stability, IoU
-  ├── Convert binary masks → polygons
-  └── Save per-image JSON (masks + polygons + metadata)
-      │
-      ▼
-Script 2: CVAT XML Converter
-  ├── Read per-image JSON files
-  ├── Assign dummy label "rock" to all instances
-  ├── Build CVAT XML 1.1 annotation structure
-  └── Write annotations.xml
-      │
-      ▼
-CVAT: Import annotations.xml into Task
-      │
-      ▼
-CVAT: Manual refinement → assign final rock classes
+┌─────────────────────────────────────────────────────┐
+│                  GAMBAR MENTAH                      │
+│              (folder ./images/)                     │
+└─────────────────────┬───────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│         01_sam_auto_segmentation.ipynb              │
+│                                                     │
+│  • Load SAM vit_h weights (sekali)                  │
+│  • Loop gambar satu per satu (memory-safe)          │
+│  • Filter mask: area, pred_iou, stability_score     │
+│  • Top-K: simpan N mask terbaik berdasarkan IoU     │
+│  • Konversi binary mask → polygon (Douglas-Peucker) │
+│  • Simpan hasil per gambar → ./sam_output/*.json    │
+└─────────────────────┬───────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│            02_cvat_converter.ipynb                  │
+│                                                     │
+│  • Fetch frame list dari CVAT REST API              │
+│    (mendapatkan frame index & nama yang tepat)      │
+│  • Baca semua ./sam_output/*.json                   │
+│  • Assign dummy label "rock" ke semua instance      │
+│  • Build CVAT XML 1.1                               │
+│  • Simpan → ./cvat_import/annotations.xml           │
+└─────────────────────┬───────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│                   CVAT Import                       │
+│                                                     │
+│  • Upload annotations.xml ke task CVAT              │
+│  • Format: CVAT 1.1                                 │
+└─────────────────────┬───────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│            Refinement Manual di CVAT                │
+│                                                     │
+│  • Ubah label "rock" → kelas batu yang tepat        │
+│  • Perbaiki polygon yang salah bentuk               │
+│  • Hapus false positive                             │
+│  • Tambah objek yang terlewat                       │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. SAM Weights: Nuclio vs. Fresh Download
+## 3. Persiapan: SAM Weights dari Nuclio
 
-**You do NOT need to download SAM weights again.** When `nuctl deploy` was executed, the Nuclio build process downloaded `sam_vit_h_4b8939.pth` (~2.4 GB) directly into the Docker image layer. You can **copy it out of the running container** to your local filesystem.
+**Tidak perlu download ulang.** Saat `nuctl deploy` dijalankan, proses build Nuclio sudah mengunduh `sam_vit_h_4b8939.pth` (~2.4 GB) ke dalam Docker image layer. File ini bisa di-copy langsung dari container yang sedang berjalan.
 
 ```bash
-# 1. Confirm the container name and find the weight file
+# 1. Temukan path file weight di dalam container
 sudo docker exec nuclio-nuclio-pth-facebookresearch-sam-vit-h \
     find /opt/nuclio -name "*.pth" 2>/dev/null
+# Output contoh: /opt/nuclio/sam_vit_h_4b8939.pth
 
-# Typical output:
-# /opt/nuclio/sam_vit_h_4b8939.pth
-
-# 2. Copy the weight file out
+# 2. Buat folder tujuan dan copy file
+mkdir -p ~/sam_annotation/sam_weights
 sudo docker cp \
     nuclio-nuclio-pth-facebookresearch-sam-vit-h:/opt/nuclio/sam_vit_h_4b8939.pth \
-    ~/sam_weights/sam_vit_h_4b8939.pth
+    ~/sam_annotation/sam_weights/sam_vit_h_4b8939.pth
 ```
 
-If the path differs, try:
+Jika path tidak ditemukan:
 ```bash
 sudo docker exec nuclio-nuclio-pth-facebookresearch-sam-vit-h \
     find / -name "sam_vit_h_4b8939.pth" 2>/dev/null
@@ -59,165 +106,223 @@ sudo docker exec nuclio-nuclio-pth-facebookresearch-sam-vit-h \
 
 ---
 
-## 3. Required Python Libraries
-
-Install in your Conda environment:
+## 4. Instalasi Library
 
 ```bash
-# SAM
+conda activate <nama_env_kamu>
+
+# SAM (Facebook Research)
 pip install git+https://github.com/facebookresearch/segment-anything.git
 
-# Core dependencies
-pip install torch torchvision          # already installed
-pip install opencv-python-headless
-pip install pycocotools
-pip install numpy Pillow tqdm
-pip install shapely                    # polygon simplification
+# Dependencies (sebagian besar sudah terinstall)
+pip install opencv-python-headless pycocotools tqdm requests
 ```
 
-Verify GPU is available:
+Verifikasi GPU:
 ```python
 import torch
-print(torch.cuda.is_available())       # must be True
+print(torch.cuda.is_available())   # harus True
 print(torch.cuda.get_device_name(0))
 ```
 
+> ⚠️ **Penting:** Sebelum menjalankan notebook, **hentikan CVAT terlebih dahulu** (`~/cvat/cvat-stop.sh`) agar Nuclio SAM container tidak memakan GPU VRAM yang sama. Jalankan kembali setelah proses SAM selesai.
+
 ---
 
-## 4. Recommended Folder Structure
+## 5. Struktur Folder
+
+Buat folder kerja di lokasi yang diinginkan (contoh: `~/sam_annotation/`):
 
 ```
-sam_annotation_pipeline/
+sam_annotation/
 │
-├── images/                        # ← Place your raw images here
-│   ├── img_001.jpg
-│   ├── img_002.jpg
+├── images/                          # ← Letakkan semua gambar mentah di sini
+│   ├── WIN_20260225_10_52_13_Pro.jpg
+│   ├── WIN_20260225_10_52_23_Pro.jpg
 │   └── ...
 │
-├── sam_output/                    # ← Generated by Script 1 (auto-created)
-│   ├── img_001.json               #    per-image mask metadata + polygons
-│   ├── img_002.json
+├── sam_output/                      # ← Auto-dibuat oleh Notebook 1
+│   ├── WIN_20260225_10_52_13_Pro.json   # metadata mask + polygon per gambar
+│   ├── WIN_20260225_10_52_23_Pro.json
 │   └── ...
 │
-├── cvat_import/                   # ← Generated by Script 2 (auto-created)
-│   └── annotations.xml            #    ready for CVAT import
+├── cvat_import/                     # ← Auto-dibuat oleh Notebook 2
+│   └── annotations.xml              # siap diimport ke CVAT
 │
 ├── sam_weights/
-│   └── sam_vit_h_4b8939.pth       # ← copied from Nuclio container
+│   └── sam_vit_h_4b8939.pth         # ← dicopy dari Nuclio container (Step 3)
 │
-├── 01_sam_auto_segmentation.ipynb  # Script 1
-└── 02_cvat_converter.ipynb         # Script 2
+├── 01_sam_auto_segmentation.ipynb   # Notebook 1: Segmentasi
+└── 02_cvat_converter.ipynb          # Notebook 2: Konversi ke CVAT XML
 ```
+
+> **Catatan lokasi notebook:** Di repositori ini, kedua notebook berada di
+> `notebooks/exploration/`. Jalankan dari sana, atau sesuaikan path `IMAGE_DIR`,
+> `OUTPUT_DIR`, dan `SAM_WEIGHTS` di Cell konfigurasi.
 
 ---
 
-## 5. Script 1 — SAM Automatic Segmentation
+## 6. Step 1 — SAM Auto Segmentation
 
+**File:** `notebooks/exploration/01_sam_auto_segmentation.ipynb`
 
-
-## 6. Script 2 — CVAT XML Converter
+### Parameter Konfigurasi (Cell 2)
 
 ```python
-def validate_cvat_xml(xml_path: str):
-    """Quick structural validation of the generated XML."""
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    version  = root.findtext("version")
-    images   = root.findall("image")
-    polygons = root.findall(".//polygon")
-    labels   = {el.findtext("name") for el in root.findall(".//label")}
-
-    print(f"CVAT XML Validation")
-    print(f"  Version   : {version}")
-    print(f"  Images    : {len(images)}")
-    print(f"  Polygons  : {len(polygons)}")
-    print(f"  Labels    : {labels}")
-
-    # Check for common issues
-    issues = []
-    for img in images:
-        if not img.get("name"):
-            issues.append(f"  [WARN] <image> missing 'name' attribute: id={img.get('id')}")
-        polys = img.findall("polygon")
-        for p in polys:
-            pts = p.get("points", "")
-            n_coords = len(pts.split(";"))
-            if n_coords < 3:
-                issues.append(
-                    f"  [WARN] Polygon with < 3 points in {img.get('name')}"
-                )
-
-    if issues:
-        print("\nIssues found:")
-        for issue in issues:
-            print(issue)
-    else:
-        print("\n  No issues found. File is ready for CVAT import.")
-
-validate_cvat_xml(CVAT_OUTPUT)
+SAM_PARAMS = dict(
+    points_per_side         = 32,    # grid 32×32 = 1024 prompt points
+    points_per_batch        = 16,    # batch decoding (turunkan jika OOM)
+    pred_iou_thresh         = 0.90,  # threshold kualitas mask
+    stability_score_thresh  = 0.96,  # threshold stabilitas batas mask
+    box_nms_thresh          = 0.50,  # NMS: hapus mask yang terlalu overlap
+    crop_n_layers           = 0,     # MATIKAN crop — penyebab utama OOM
+    min_mask_region_area    = 3000,  # minimal ~55×55 px (sesuaikan dengan ukuran batu)
+)
+MIN_AREA_PX       = 3000
+MAX_MASKS_PER_IMG = 150             # hard cap: simpan top-N mask terbaik
 ```
+
+### Strategi Memory GPU
+
+- **Satu gambar per iterasi** — tidak ada batching antar gambar
+- `torch.cuda.empty_cache()` + `gc.collect()` dipanggil setelah **setiap gambar**
+- `skip_existing=True` — gambar yang sudah diproses dilewati, aman untuk re-run
+- Top-K filtering dijalankan **sebelum** konversi polygon untuk efisiensi
+
+### Menjalankan
+
+1. Pastikan CVAT sudah dihentikan: `~/cvat/cvat-stop.sh`
+2. Buka `01_sam_auto_segmentation.ipynb`
+3. **Tutup dan buka kembali notebook** setelah setiap kali edit parameter (untuk memastikan kernel membaca versi terbaru)
+4. **Restart Kernel → Run All Cells**
+5. Output akan tampil seperti:
+   ```
+   Found 103 images in './images'
+   Hard cap per image : 150 masks (ranked by predicted_iou)
+     WIN_20260225_10_52_13_Pro.jpg: 87 masks (3840×2160)
+     WIN_20260225_10_52_23_Pro.jpg: 94 masks (3840×2160)
+   ```
+
+### Cleanup Cache (jika perlu re-proses)
+
+Jika ada JSON lama dengan jumlah mask yang melebihi batas, jalankan **Cell 6 (Cleanup)**
+sebelum pipeline — cell ini otomatis menghapus file JSON yang `n_masks > MAX_MASKS_PER_IMG`.
 
 ---
 
-## 7. Importing Annotations into CVAT
+## 7. Step 2 — Konversi ke CVAT XML
 
-### Step A — Create a CVAT Task
+**File:** `notebooks/exploration/02_cvat_converter.ipynb`
 
-1. Open CVAT at `http://localhost:8080`
-2. Click **Create Task**
-3. Set the **Task Name** (note it; does not need to match `TASK_NAME` in the XML)
-4. Under **Labels**, add a label named exactly **`rock`** (case-sensitive, must match `DUMMY_LABEL`)
-5. Under **Select files**, upload all your images from the `images/` folder
-6. Click **Submit & Open**
+### Prasyarat: Task CVAT Sudah Dibuat
 
-> **Critical:** The filenames uploaded to CVAT must match the `name` attributes in `annotations.xml` exactly (e.g., `img_001.jpg` in CVAT must match `<image name="img_001.jpg">`). If CVAT renames files, the import will silently skip non-matching annotations.
+Sebelum menjalankan notebook ini, buat task di CVAT terlebih dahulu:
 
-### Step B — Import the Annotation File
+1. Nyalakan CVAT: `~/cvat/cvat-start.sh`
+2. Buka `http://localhost:8080`
+3. Klik **Create Task**
+4. Isi nama task, tambahkan label **`rock`** (persis, case-sensitive)
+5. Upload semua gambar dari folder `images/`
+6. Klik **Submit & Open**
+7. Catat **Task ID** dari URL: `http://localhost:8080/tasks/`**`3`** → ID = `3`
 
-1. Open the task you just created
-2. Click the **three-dot menu (⋮)** on the task → **Upload annotations**
-3. Select format: **CVAT 1.1**
-4. Choose the file: `cvat_import/annotations.xml`
-5. Click **OK**
-6. Wait for the `cvat_worker_import` container to process it (observable via `sudo docker logs cvat_worker_import -f`)
+### Konfigurasi (Cell 1)
 
-### Step C — Verify Import
-
-```bash
-# Watch import worker logs
-sudo docker logs cvat_worker_import --tail 30 -f
+```python
+CVAT_URL      = "http://localhost:8080"
+CVAT_USERNAME = "admin"       # username CVAT kamu
+CVAT_PASSWORD = "yourpassword" # password CVAT kamu
+CVAT_TASK_ID  = 3             # ID task dari URL CVAT
 ```
 
-In CVAT UI:
-- Open a job → confirm polygons appear overlaid on rocks
-- Check the label column shows `rock` for all instances
+### Mengapa Perlu Fetch Frame dari API CVAT?
+
+CVAT menyimpan nama file secara internal persis seperti yang diterimanya. Jika upload
+dilakukan via ZIP, nama bisa berupa `images/foto.jpg` bukan `foto.jpg`. Frame `id`
+juga ditentukan oleh urutan yang CVAT tentukan, bukan urutan alfabet file kita.
+
+Cell 2 memanggil `/api/tasks/{id}/data/meta` untuk mendapatkan:
+- Frame index yang tepat (posisi dalam list respons API)
+- Nama file yang tersimpan persis di CVAT
+
+Hasilnya digunakan di Cell 3 untuk mengisi `<image id="..." name="...">` dengan
+nilai yang dijamin cocok — sehingga import tidak akan menghasilkan error
+`Could not match item id`.
+
+### Menjalankan
+
+1. Jalankan **Run All Cells**
+2. Cell 2 akan mencetak daftar frame:
+   ```
+   Fetched 103 frames from CVAT task 3:
+     [  0]  WIN_20260225_10_52_13_Pro.jpg
+     [  1]  WIN_20260225_10_52_23_Pro.jpg
+     ...
+   ```
+3. Cell 3 membangun XML dan menyimpannya ke `cvat_import/annotations.xml`
+4. Cell 4 memvalidasi struktur XML
 
 ---
 
-## 8. Refining Annotations in CVAT
+## 8. Step 3 — Import ke CVAT
 
-Once the mass annotations are imported, the workflow is:
+1. Buka task yang sudah dibuat di `http://localhost:8080`
+2. Klik **menu tiga titik (⋮)** di task → **Upload annotations**
+3. Pilih format: **CVAT 1.1**
+4. Pilih file: `cvat_import/annotations.xml`
+5. Klik **OK**
+6. Pantau proses import:
+   ```bash
+   sudo docker logs cvat_worker_import --tail 30 -f
+   ```
+7. Buka salah satu job → pastikan polygon terlihat menyelimuti batu-batu
 
-1. **Open a job** → you will see hundreds of orange polygons (all labeled `rock`)
-2. **Add the final rock classes** to the task labels:
-   - Go to **Task settings → Labels → Add Label** for each class:
-     `CLAS - Silt`, `CLAS - Loose Sand`, `CLAS - Sandstone`, `CARB - Limestone`, `CLAS - Loose Sandy and Silt`, `CLAS - Loose Silt`, `CARB - Loose Limestone`, `CLAS - Coal`
-3. **Reclassify** each polygon:
-   - Click a polygon → the label dropdown appears in the left panel
-   - Change `rock` → correct class
-4. **Reshape bad masks** with the **Edit Polygon** tool:
-   - Double-click a polygon to enter edit mode
-   - Drag individual vertices or edges to correct shape
-5. **Delete false positives** (background detected as rock):
-   - Select polygon → `Del` key
-6. **Add missed objects**:
-   - Use the **Polygon** tool manually, or use **AI Tools → SAM** (interactive) for missed individual rocks
+---
 
-### Efficiency Tips for 100+ Objects per Image
+## 9. Step 4 — Refinement di CVAT
 
-- Use **keyboard shortcuts** extensively: `N` = next object, `F` = next frame
-- Sort by **area ascending** in the Object panel to find tiny false positives quickly
-- Use **Tag** annotations to mark images as "reviewed" vs "pending"
-- Assign different jobs to multiple annotators — CVAT supports concurrent multi-user annotation on the same task
-- For bulk reclassification: if you can identify broad spatial regions of a particular rock class, use **Group** + **Change label for group** in the side panel
+Setelah import berhasil, semua polygon berlabel `rock`. Langkah selanjutnya:
+
+### Tambahkan Label Kelas Final
+
+Masuk ke **Task Settings → Labels → Add Label** untuk setiap kelas:
+
+| Label | Kategori |
+|---|---|
+| `CLAS - Silt` | Klastik |
+| `CLAS - Loose Sand` | Klastik |
+| `CLAS - Sandstone` | Klastik |
+| `CARB - Limestone` | Karbonat |
+| `CLAS - Loose Sandy and Silt` | Klastik |
+| `CLAS - Loose Silt` | Klastik |
+| `CARB - Loose Limestone` | Karbonat |
+| `CLAS - Coal` | Organik |
+
+### Alur Refinement per Gambar
+
+1. Klik polygon → panel kiri menampilkan dropdown label
+2. Ubah `rock` → kelas batu yang sesuai
+3. Untuk polygon yang salah bentuk: **double-click** → edit mode → drag vertex
+4. Untuk false positive: pilih polygon → tekan `Del`
+5. Untuk objek yang terlewat: gunakan tool **Polygon** atau **AI Tools → SAM**
+
+### Tips Efisiensi (100+ Objek per Gambar)
+
+- `N` = next object, `F` = next frame (shortcut paling sering dipakai)
+- Sort objek berdasarkan **area ascending** → temukan false positive kecil lebih cepat
+- Gunakan **Tag** untuk menandai gambar sebagai `reviewed` / `pending`
+- Bagi pekerjaan ke beberapa annotator — CVAT mendukung multi-user pada satu task
+
+---
+
+## 10. Troubleshooting
+
+| Error | Penyebab | Solusi |
+|---|---|---|
+| `CUDA out of memory` | GPU dipakai bersama Nuclio SAM container | Stop CVAT sebelum jalankan notebook: `~/cvat/cvat-stop.sh` |
+| `CUDA out of memory` | `crop_n_layers=1` + gambar besar | Set `crop_n_layers=0` di `SAM_PARAMS` |
+| Mask terlalu banyak (>150) | Kernel masih pakai fungsi lama | Tutup-buka notebook, Restart Kernel, Run All |
+| `CvatImportError: Could not match item id` | Nama file di XML tidak cocok dengan CVAT | Pastikan Cell 2 di `02_cvat_converter.ipynb` berhasil fetch frame list dari API |
+| `KeyError: 'idx'` | Versi CVAT lama tidak punya field `idx` | Frame index diambil dari posisi list (sudah diperbaiki: gunakan `enumerate`) |
+| `401 Unauthorized` | Credentials salah | Cek `CVAT_USERNAME` dan `CVAT_PASSWORD` di Cell 1 |
+| `404 Not Found` | Task ID salah | Cek URL CVAT: `http://localhost:8080/tasks/N` → N = `CVAT_TASK_ID` |

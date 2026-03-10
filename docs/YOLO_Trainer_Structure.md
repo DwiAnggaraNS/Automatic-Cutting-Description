@@ -1,30 +1,30 @@
-# 📚 YOLO Trainer - Struktur Baru
+# 📚 YOLO Trainer - New Structure
 
-## 🎯 Perubahan yang Dilakukan
+## 🎯 Changes Made
 
-### 1. **Notebook Utama: YOLO Trainer.ipynb**
+### 1. **Main Notebook: YOLO Trainer.ipynb**
 
-#### Struktur Cell (Urutan yang Benar):
+#### Cell Structure (Correct Order):
 
 ```
 1. [H1] 🚀 YOLO Trainer - Enhanced with Callbacks & Metrics
    └─ Quick start guide
 
-2. [H2] ⚙️ Konfigurasi Training (EDIT DI SINI!)
+2. [H2] ⚙️ Training Configuration (EDIT HERE!)
    
-3. [CODE] Konfigurasi Utama
-   └─ Semua parameter manual dalam SATU cell:
+3. [CODE] Main Configuration
+   └─ All manual parameters in ONE cell:
       - VERSION, RUNNER_NAME, HISTORY_NAME
       - TARGET_EPOCHS, BATCH_SIZE, IMG_SIZE, PATIENCE
       - Auto path detection (Colab vs Local)
-      - DATASET_ROOT (edit untuk local!)
+      - DATASET_ROOT (edit for local!)
 
 4. [H2] 📦 Import Libraries
 5. [CODE] Basic imports (gc, torch, time)
 6. [CODE] Install packages
 7. [CODE] YOLO imports
 
-8. [H2] 🔧 Custom Callbacks untuk YOLO Training
+8. [H2] 🔧 Custom Callbacks for YOLO Training
 9. [CODE] YOLOCallbackManager class
 
 10. [H2] 📊 Metrics Evaluator
@@ -34,7 +34,7 @@
 13. [CODE] save_history(), load_history(), create_summary_from_callback()
 
 14. [H2] 📈 Visualization & Comparison
-    └─ Catatan: Gunakan YOLO Visualizer.ipynb
+    └─ Note: Use YOLO Visualizer.ipynb
 
 15. [H2] 🚀 Main Training Function
 16. [CODE] run_training() function - Clean & Simple!
@@ -43,9 +43,9 @@
 18. [CODE] model, callback_manager, final_metrics = run_training()
 ```
 
-### 2. **Notebook Terpisah: YOLO Visualizer.ipynb**
+### 2. **Separate Notebook: YOLO Visualizer.ipynb**
 
-Semua fungsi visualization & comparison dipindahkan ke sini:
+All visualization & comparison functions have been moved here:
 - `Plotting()` - Compare 2 experiments
 - `Plot_all_metrics()` - Visualize 1 experiment
 - `Table_to_compare()` - Comparison table
@@ -54,85 +54,85 @@ Semua fungsi visualization & comparison dipindahkan ke sini:
 
 ---
 
-## 🔑 Keuntungan Struktur Baru
+## 🔑 Benefits of the New Structure
 
-### ✅ **Konfigurasi Terpusat**
-- Semua parameter manual dalam **1 cell** di awal
-- Tidak perlu scroll jauh untuk edit VERSION/RUNNER_NAME
+### ✅ **Centralized Configuration**
+- All manual parameters in **1 cell** at the top
+- No need to scroll far to edit VERSION/RUNNER_NAME
 - Auto-detect environment (Colab/Local)
 
-### ✅ **Cell Training yang Bersih**
-- Tidak ada kode kompleks dari versi lama
-- Integrasi langsung dengan callbacks & metrics
-- Fokus pada training, bukan benchmarking
+### ✅ **Clean Training Cell**
+- No complex code from the old version
+- Direct integration with callbacks & metrics
+- Focused on training, not benchmarking
 
-### ✅ **Urutan yang Benar**
+### ✅ **Correct Order**
 ```
 Setup Config → Libraries → Callbacks → Metrics → History → Training
 ```
-- Training code **setelah** semua helper functions
-- History saving terintegrasi dalam training function
+- Training code comes **after** all helper functions
+- History saving integrated within the training function
 
-### ✅ **Pemisahan Concerns**
+### ✅ **Separation of Concerns**
 - **YOLO Trainer.ipynb**: Training only
 - **YOLO Visualizer.ipynb**: Analysis & comparison
-- Lebih modular dan maintainable
+- More modular and maintainable
 
 ---
 
-## 🚀 Cara Pakai
+## 🚀 How to Use
 
 ### Training Workflow:
 
-1. **Buka YOLO Trainer.ipynb**
+1. **Open YOLO Trainer.ipynb**
 
-2. **Edit Cell ke-3 (Konfigurasi Utama):**
+2. **Edit Cell 3 (Main Configuration):**
    ```python
-   VERSION = "C_2026_1d80_10_10_AUG"  # Dataset Anda
+   VERSION = "C_2026_1d80_10_10_AUG"  # Your dataset
    RUNNER_NAME = "YOLOv12_Medium_Experiment1"
    TARGET_EPOCHS = 150
    BATCH_SIZE = 6
    HISTORY_NAME = "history_experiment1"
    
-   # ⚠️ PENTING untuk Local:
-   DATASET_ROOT = f'D:/Intern-PDU/datasets/{VERSION}'  # Sesuaikan!
+   # ⚠️ IMPORTANT for Local:
+   DATASET_ROOT = f'D:/Intern-PDU/datasets/{VERSION}'  # Adjust accordingly!
    ```
 
-3. **Klik "Run All Cells"** atau run cell-by-cell
+3. **Click "Run All Cells"** or run cell-by-cell
 
-4. **Hasil:**
-   - Model tersimpan: `{DATASET_ROOT}/models/{RUNNER_NAME}/`
-   - History tersimpan: `training_history.txt` (dengan nama: `{HISTORY_NAME}`)
+4. **Results:**
+   - Model saved to: `{DATASET_ROOT}/models/{RUNNER_NAME}/`
+   - History saved to: `training_history.txt` (with name: `{HISTORY_NAME}`)
 
 ### Visualization Workflow:
 
-1. **Buka YOLO Visualizer.ipynb**
+1. **Open YOLO Visualizer.ipynb**
 
-2. **Scroll ke "Example 1: Compare Two Experiments"**
+2. **Scroll to "Example 1: Compare Two Experiments"**
 
-3. **Edit nama eksperimen:**
+3. **Edit experiment names:**
    ```python
    EXPERIMENT_1 = 'history_experiment1'
    EXPERIMENT_2 = 'history_experiment2'
    ```
 
-4. **Run cell tersebut** untuk melihat:
-   - Plot perbandingan F1-Score
-   - Plot semua metrik (Precision, Recall, IoU)
-   - Tabel perbandingan
+4. **Run that cell** to view:
+   - F1-Score comparison plot
+   - All metrics plot (Precision, Recall, IoU)
+   - Comparison table
    - Improvement summary
 
 ---
 
-## 📁 File Output
+## 📁 Output Files
 
 ### Training Results:
 ```
 {DATASET_ROOT}/models/{RUNNER_NAME}/
 ├── weights/
-│   ├── best.pt           # Model terbaik
-│   └── last.pt           # Model epoch terakhir
-├── results.csv           # Training log dari YOLO
+│   ├── best.pt           # Best model
+│   └── last.pt           # Last epoch model
+├── results.csv           # Training log from YOLO
 └── confusion_matrix.png  # Confusion matrix (auto from YOLO)
 ```
 
@@ -155,26 +155,26 @@ history_experiment2 = {'train_loss': [...], 'val_f1': [...], 'final_f1': 0.88, .
 ## 🔧 Troubleshooting
 
 ### ❌ Error: "DATASET_ROOT not found"
-**Solusi:** Edit cell konfigurasi (cell ke-3), sesuaikan path:
+**Solution:** Edit the configuration cell (cell 3) and adjust the path:
 ```python
 DATASET_ROOT = f'D:/path/to/your/datasets/{VERSION}'
 ```
 
 ### ❌ Error: "Experiment not found in history file"
-**Solusi:** Pastikan training sudah selesai dan `save_history()` dipanggil.
-Check nama `HISTORY_NAME` di config dan di visualizer.
+**Solution:** Make sure training has completed and `save_history()` was called.
+Check that `HISTORY_NAME` in the config matches the name used in the visualizer.
 
-### ❌ Cell training tidak jalan
-**Solusi:** Pastikan cell-cell sebelumnya (callbacks, metrics, history) sudah di-run terlebih dahulu.
+### ❌ Training cell doesn't run
+**Solution:** Make sure the preceding cells (callbacks, metrics, history) have been run first.
 
 ### ❌ "run_training() not defined"
-**Solusi:** Run cell "Main Training Function" (cell sebelum cell run training).
+**Solution:** Run the "Main Training Function" cell (the cell before the run training cell).
 
 ---
 
 ## 💡 Tips
 
-1. **Nama Eksperimen Deskriptif:**
+1. **Use Descriptive Experiment Names:**
    ```python
    RUNNER_NAME = "YOLOv12_Medium_Baseline"
    HISTORY_NAME = "history_baseline"
@@ -184,48 +184,48 @@ Check nama `HISTORY_NAME` di config dan di visualizer.
    HISTORY_NAME = "history_augmented"
    ```
 
-2. **Test dengan Epochs Kecil:**
+2. **Test with Small Epochs First:**
    ```python
-   TARGET_EPOCHS = 5  # Test dulu
-   # Setelah OK, ubah ke:
+   TARGET_EPOCHS = 5  # Test first
+   # Once confirmed OK, change to:
    # TARGET_EPOCHS = 150
    ```
 
 3. **Monitor GPU Usage:**
-   - Training akan print VRAM available
-   - Kalau OOM, turunkan BATCH_SIZE
+   - Training will print available VRAM
+   - If OOM, reduce BATCH_SIZE
 
-4. **Backup History File:**
-   - `training_history.txt` sangat penting
-   - Backup secara berkala setelah eksperimen
+4. **Back Up the History File:**
+   - `training_history.txt` is critical
+   - Back it up periodically after each experiment
 
 ---
 
 ## 📊 Comparison Best Practices
 
-### Perbandingan yang Valid:
+### Valid Comparisons:
 
-✅ **BENAR:**
+✅ **CORRECT:**
 ```python
-# Bandingkan dengan config yang sama, hanya ubah 1 variable
+# Compare with the same config, changing only 1 variable
 EXPERIMENT_1 = "history_baseline"           # EPOCHS=100, BS=6
 EXPERIMENT_2 = "history_different_epochs"   # EPOCHS=150, BS=6
 ```
 
-❌ **SALAH:**
+❌ **INCORRECT:**
 ```python
-# Terlalu banyak variable berubah
+# Too many variables changed at once
 EXPERIMENT_1 = "baseline"        # EPOCHS=100, BS=6, IMG=960
 EXPERIMENT_2 = "experiment_new"  # EPOCHS=150, BS=4, IMG=640
-# Sulit mengetahui mana yang berpengaruh!
+# Hard to tell which change had the effect!
 ```
 
-### Workflow Eksperimen:
+### Experiment Workflow:
 
-1. **Baseline:** Train dengan config default
-2. **Experiment 1:** Ubah **1 parameter** (misal: epochs)
-3. **Compare:** Gunakan visualizer untuk bandingkan
-4. **Experiment 2:** Ubah parameter lain berdasarkan hasil
+1. **Baseline:** Train with default config
+2. **Experiment 1:** Change **1 parameter** (e.g., epochs)
+3. **Compare:** Use the visualizer to compare results
+4. **Experiment 2:** Adjust another parameter based on results
 5. **Repeat**
 
 ---

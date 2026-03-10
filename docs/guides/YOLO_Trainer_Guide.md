@@ -2,12 +2,12 @@
 
 ## 📌 Overview
 
-Notebook **YOLO Trainer.ipynb** adalah sistem training YOLO yang sudah dilengkapi dengan:
+The **YOLO Trainer.ipynb** notebook is a complete YOLO training system featuring:
 - ✅ **Auto Path Detection** (Colab/Local)
 - ✅ **Integrated Callbacks** (EarlyStopping & ModelCheckpoint)
 - ✅ **sklearn-powered Metrics** (Precision, Recall, F1, IoU)
 - ✅ **History Management** (Auto-save & Comparison)
-- ✅ **Ready for Run All** - Tidak perlu edit manual!
+- ✅ **Ready for Run All** — No manual editing required!
 
 ---
 
@@ -22,31 +22,31 @@ pip install ultralytics scikit-learn pyyaml tqdm pandas matplotlib torch
 
 **Google Colab:**
 ```python
-# Sudah include di cell pertama notebook
+# Already included in the first notebook cell
 !pip install ultralytics scikit-learn pyyaml tqdm pandas matplotlib
 ```
 
-### 2️⃣ Konfigurasi Path Dataset
+### 2️⃣ Configure Dataset Path
 
-Notebook **otomatis mendeteksi** environment Anda!
+The notebook **automatically detects** your environment!
 
-**Untuk Lokal**, sesuaikan path di **Cell 19** (Training Configuration):
+**For Local**, adjust the path in **Cell 19** (Training Configuration):
 ```python
-# Jika dataset di D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG/
+# If dataset is at D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG/
 DATASET_ROOT = f'D:/Intern-PDU/datasets/{VERSION}'
 
-# Atau gunakan relative path
+# Or use a relative path
 DATASET_ROOT = f'./datasets/{VERSION}'
 ```
 
-**Untuk Colab**, path otomatis ke Google Drive:
+**For Colab**, the path automatically points to Google Drive:
 ```python
 DATASET_ROOT = f'/content/drive/MyDrive/Colab Notebooks/TA_CuttingRockDescription/datasets/{VERSION}'
 ```
 
-### 3️⃣ Struktur Folder Dataset
+### 3️⃣ Dataset Folder Structure
 
-Pastikan dataset Anda memiliki struktur seperti ini:
+Make sure your dataset has this structure:
 
 ```
 D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG/
@@ -62,9 +62,9 @@ D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG/
     └── labels/                  # Test labels (optional)
 ```
 
-**File `data.yaml` contoh:**
+**Example `data.yaml` file:**
 ```yaml
-path: D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG  # atau path Anda
+path: D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG  # or your path
 train: train/images
 val: val/images
 test: test/images  # optional
@@ -73,42 +73,42 @@ nc: 4  # number of classes
 names: ['class1', 'class2', 'class3', 'class4']  # class names
 ```
 
-### 4️⃣ Jalankan Training
+### 4️⃣ Run Training
 
-**Cara 1: Run All Cells** (Recommended!)
-1. Buka notebook
-2. Klik **Cell > Run All** 
-3. Tunggu sampai selesai ☕
+**Method 1: Run All Cells** (Recommended!)
+1. Open the notebook
+2. Click **Cell > Run All**
+3. Wait for completion ☕
 
-**Cara 2: Run cell by cell**
-1. Run cell 1-18: Setup & Helper Functions
+**Method 2: Run cell by cell**
+1. Run cells 1–18: Setup & Helper Functions
 2. Run cell 19: Training Configuration & `run_yolo()`
 3. Done! ✅
 
 ---
 
-## ⚙️ Konfigurasi Training
+## ⚙️ Training Configuration
 
-Edit konfigurasi di **Cell 19** sebelum training:
+Edit the configuration in **Cell 19** before training:
 
 ```python
 # Dataset Version
-VERSION = "C_2026_1d80_10_10_AUG"  # Nama folder dataset Anda
+VERSION = "C_2026_1d80_10_10_AUG"  # Your dataset folder name
 
 # Training Hyperparameters
-TARGET_EPOCHS = 150        # Jumlah epoch (ubah ke 5 untuk test cepat)
-IMG_SIZE = 960             # Ukuran gambar input
-BATCH_SIZE = 6             # Batch size (sesuaikan dengan VRAM GPU)
+TARGET_EPOCHS = 150        # Number of epochs (set to 5 for a quick test)
+IMG_SIZE = 960             # Input image size
+BATCH_SIZE = 6             # Batch size (adjust based on GPU VRAM)
 PATIENCE = 50              # Early stopping patience
-RUNNER_NAME = "YOLOv12_Medium"  # Nama eksperimen (untuk save history)
-SINGLE_CLASS = False       # True jika single class detection
+RUNNER_NAME = "YOLOv12_Medium"  # Experiment name (used for history saving)
+SINGLE_CLASS = False       # Set True for single-class detection
 
 # Model Configuration
 YOLO_MODEL_URL = "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12m-seg.pt"
-YOLO_MODEL = "yolov12m-seg.pt"  # Model yang akan di-download
+YOLO_MODEL = "yolov12m-seg.pt"  # Model to download
 
 # Testing
-SMOKE_TEST = False  # Set True untuk test cepat (2 epochs)
+SMOKE_TEST = False  # Set True for a quick test (2 epochs)
 ```
 
 ---
@@ -117,7 +117,7 @@ SMOKE_TEST = False  # Set True untuk test cepat (2 epochs)
 
 ### Real-time Monitoring
 
-Training akan menampilkan:
+Training will display:
 - ✅ Epoch progress & metrics
 - ✅ Early stopping status
 - ✅ Model checkpoint notifications
@@ -130,7 +130,7 @@ Training akan menampilkan:
 
 ### Post-Training Evaluation
 
-Setelah training, otomatis menjalankan evaluasi:
+After training, evaluation runs automatically:
 ```
 ============================================================
 📊 EVALUATION RESULTS (sklearn-powered)
@@ -150,10 +150,10 @@ Setelah training, otomatis menjalankan evaluasi:
 
 ### Auto-Save History
 
-History otomatis tersimpan ke file `training_history.txt` saat training selesai:
+History is automatically saved to `training_history.txt` when training completes:
 
 ```python
-# Format di file:
+# Format in the file:
 # Saved: 2026-02-23 14:30:00
 history_YOLOv12_Medium_C_2026_1d80_10_10_AUG = {
     'train_loss': [0.523, 0.412, 0.351, ...],
@@ -168,7 +168,7 @@ history_YOLOv12_Medium_C_2026_1d80_10_10_AUG = {
 ### Load History
 
 ```python
-# Load single experiment
+# Load a single experiment
 history_1 = load_history('history_YOLOv12_Medium_C_2026_1d80_10_10_AUG')
 
 # Load all experiments
@@ -181,7 +181,7 @@ all_histories = load_all_histories()
 
 ### Compare 2 Experiments
 
-Jalankan **Cell "Comparison & Plotting"** (setelah training):
+Run the **"Comparison & Plotting"** cell (after training):
 
 ```python
 # Konfigurasi
@@ -216,7 +216,7 @@ Table_to_compare(history_1['final_f1'], history_2['final_f1'], 'F1-Score')
 
 ### Compare Multiple Experiments
 
-Jalankan **Cell "Compare Multiple Experiments"**:
+Run the **"Compare Multiple Experiments"** cell:
 
 ```python
 # Load all & compare
@@ -228,18 +228,18 @@ all_histories = load_all_histories()
 
 ---
 
-## 🎯 Metrik Evaluasi
+## 🎯 Evaluation Metrics
 
-Notebook menggunakan **sklearn** untuk menghitung metrik:
+The notebook uses **sklearn** to compute metrics:
 
-| Metric | Formula | Interpretasi |
-|--------|---------|--------------|
-| **Precision** | TP / (TP + FP) | Seberapa tepat prediksi model |
-| **Recall** | TP / (TP + FN) | Seberapa banyak GT terdeteksi |
-| **F1-Score** | 2·(P·R)/(P+R) | Balance precision & recall |
-| **Avg IoU** | ∑IoU / N | Kualitas segmentasi mask |
-| **mAP50** | Mean AP @ IoU=0.5 | Performa deteksi (loose) |
-| **mAP50-95** | Mean AP @ IoU=0.5:0.95 | Performa deteksi (strict) |
+| Metric | Formula | Interpretation |
+|--------|---------|----------------|
+| **Precision** | TP / (TP + FP) | How accurate the model's predictions are |
+| **Recall** | TP / (TP + FN) | How many ground-truth objects are detected |
+| **F1-Score** | 2·(P·R)/(P+R) | Balance between precision & recall |
+| **Avg IoU** | ∑IoU / N | Mask segmentation quality |
+| **mAP50** | Mean AP @ IoU=0.5 | Detection performance (lenient) |
+| **mAP50-95** | Mean AP @ IoU=0.5:0.95 | Detection performance (strict) |
 
 ---
 
@@ -250,16 +250,16 @@ Notebook menggunakan **sklearn** untuk menghitung metrik:
 **Problem:** `FileNotFoundError: [Errno 2] No such file or directory`
 
 **Solution:**
-1. Cek path di Cell 19 (Training Configuration)
-2. Pastikan path sesuai dengan lokasi dataset Anda
-3. Gunakan absolute path untuk menghindari error
+1. Check the path in Cell 19 (Training Configuration)
+2. Make sure the path matches the actual dataset location
+3. Use an absolute path to avoid errors
 
 ```python
-# ✅ Benar (absolute)
+# ✅ Correct (absolute)
 DATASET_ROOT = 'D:/Intern-PDU/datasets/C_2026_1d80_10_10_AUG'
 
-# ❌ Salah (path tidak ada)
-DATASET_ROOT = '/content/drive/MyDrive/...'  # Jika run di lokal
+# ❌ Incorrect (path doesn't exist)
+DATASET_ROOT = '/content/drive/MyDrive/...'  # When running locally
 ```
 
 ### Error: CUDA out of memory
@@ -267,14 +267,14 @@ DATASET_ROOT = '/content/drive/MyDrive/...'  # Jika run di lokal
 **Problem:** `RuntimeError: CUDA out of memory`
 
 **Solution:**
-1. Kurangi `BATCH_SIZE` di Cell 19:
+1. Reduce `BATCH_SIZE` in Cell 19:
 ```python
-BATCH_SIZE = 4  # atau 2 untuk GPU kecil
+BATCH_SIZE = 4  # or 2 for smaller GPUs
 ```
 
-2. Atau kurangi `IMG_SIZE`:
+2. Or reduce `IMG_SIZE`:
 ```python
-IMG_SIZE = 640  # dari 960
+IMG_SIZE = 640  # from 960
 ```
 
 ### History file not found
@@ -282,22 +282,22 @@ IMG_SIZE = 640  # dari 960
 **Problem:** `❌ History file not found: training_history.txt`
 
 **Solution:**
-1. Jalankan training terlebih dahulu
-2. History file akan dibuat otomatis setelah training selesai
-3. File tersimpan di current working directory
+1. Run training first
+2. The history file will be created automatically after training completes
+3. The file is saved in the current working directory
 
 ### Warning: Experiment not found
 
 **Problem:** `❌ Experiment 'history_xyz' not found in history file`
 
 **Solution:**
-1. Cek nama eksperimen dengan:
+1. Check available experiment names with:
 ```python
 all_histories = load_all_histories()
-# Print semua nama eksperimen yang tersedia
+# Prints all available experiment names
 ```
 
-2. Gunakan nama eksperimen yang benar (case-sensitive!)
+2. Use the correct experiment name (case-sensitive!)
 
 ---
 

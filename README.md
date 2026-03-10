@@ -144,6 +144,7 @@ notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & metrics)
 
 | Document | Description |
 |----------|-------------|
+| [Semi-automated annotation via CVAT + Segment Anything Model Guide](docs/guides/sam_autoannotation.md) | Environment Setup, Configuration, and Annotation Workflow |
 | [YOLO Trainer Guide](docs/guides/YOLO_Trainer_Guide.md) | Training workflow & configuration |
 | [CVAT + SAM Installation Guide](docs/guides/CVAT_SAM_Installation_Guide.md) | Annotation toolchain setup |
 | [YOLO Trainer Structure](docs/YOLO_Trainer_Structure.md) | Notebook architecture reference |

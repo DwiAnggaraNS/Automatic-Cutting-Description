@@ -108,59 +108,7 @@ sam_annotation_pipeline/
 ├── 01_sam_auto_segmentation.ipynb  # Script 1
 └── 02_cvat_converter.ipynb         # Script 2
 ```
-
----
-
-## 5. Script 1 — SAM Automatic Segmentation
-
-
-
-## 6. Script 2 — CVAT XML Converter
-
-```python
-def validate_cvat_xml(xml_path: str):
-    """Quick structural validation of the generated XML."""
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    version  = root.findtext("version")
-    images   = root.findall("image")
-    polygons = root.findall(".//polygon")
-    labels   = {el.findtext("name") for el in root.findall(".//label")}
-
-    print(f"CVAT XML Validation")
-    print(f"  Version   : {version}")
-    print(f"  Images    : {len(images)}")
-    print(f"  Polygons  : {len(polygons)}")
-    print(f"  Labels    : {labels}")
-
-    # Check for common issues
-    issues = []
-    for img in images:
-        if not img.get("name"):
-            issues.append(f"  [WARN] <image> missing 'name' attribute: id={img.get('id')}")
-        polys = img.findall("polygon")
-        for p in polys:
-            pts = p.get("points", "")
-            n_coords = len(pts.split(";"))
-            if n_coords < 3:
-                issues.append(
-                    f"  [WARN] Polygon with < 3 points in {img.get('name')}"
-                )
-
-    if issues:
-        print("\nIssues found:")
-        for issue in issues:
-            print(issue)
-    else:
-        print("\n  No issues found. File is ready for CVAT import.")
-
-validate_cvat_xml(CVAT_OUTPUT)
-```
-
----
-
-## 7. Importing Annotations into CVAT
+## 5. Importing Annotations into CVAT
 
 ### Step A — Create a CVAT Task
 
@@ -195,7 +143,7 @@ In CVAT UI:
 
 ---
 
-## 8. Refining Annotations in CVAT
+## 6. Refining Annotations in CVAT
 
 Once the mass annotations are imported, the workflow is:
 

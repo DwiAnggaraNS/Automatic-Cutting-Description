@@ -53,7 +53,8 @@ automatic-cutting-description/
 │   │   ├── coco_polygon_simplification.py
 │   │   ├── convert_coco_to_yolo.py
 │   │   ├── merge_cvat_datasets.py
-│   │   └── redistribute_dataset.py
+│   │   ├── redistribute_dataset.py
+│   │   └── remap_coco_categories.py
 │   ├── data_analysis/
 │   │   ├── get_statistics_data.py
 │   │   ├── minority_class_extractions.py
@@ -101,6 +102,8 @@ Open `notebooks/training/YOLO_Trainer.ipynb` and click **Run All Cells**.
 ```
 Raw Images + CVAT Annotation (Separated Tasks)
         ↓
+scripts/data_preprocessing/remap_coco_categories.py  (Standardize class names and IDs across datasets)
+        ↓
 scripts/data_preprocessing/merge_cvat_datasets.py    (Merge separated CVAT COCO datasets into one)
         ↓
 scripts/data_preprocessing/convert_coco_to_yolo.py   (COCO → YOLO format)
@@ -124,14 +127,13 @@ notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & metrics)
 
 | ID | Class Name               | Category  |
 |----|--------------------------|-----------|
-| 0  | Siltstone                | Clastic   |
-| 1  | Loose Sand               | Clastic   |
-| 2  | Sandstone                | Clastic   |
-| 3  | Limestone                | Carbonate |
-| 4  | Loose Sandy and Silt     | Clastic   |
-| 5  | Loose Silt               | Clastic   |
-| 6  | Loose Limestone          | Carbonate |
-| 7  | Coal                     | Organic   |
+| 1  | Silt                     | Clastic   |
+| 2  | Sand                     | Clastic   |
+| 3  | Sandstone                | Clastic   |
+| 4  | Limestone                | Carbonate |
+| 5  | Coal                     | Organic   |
+| 6  | Shalestone               | Clastic   |
+| 7  | Quartz                   | Mineral   |
 
 ---
 

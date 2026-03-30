@@ -43,22 +43,39 @@ def create_simplified_mapping():
     """
     Create mapping from detailed classes to simplified categories.
     Combines similar classes (e.g., Silt + Loose Silt, Limestone + Loose Limestone)
+    Since we have standardized the classes in the new pipeline, we map 
+    the IDs based on the new final standardized names.
+    Note: In COCO standard mapping is usually 1-indexed, but after 
+    YOLO conversion they become 0-indexed. Adjusting for 0-indexed YOLO format.
     """
     return {
-        # Silt categories
-        0: 'Siltstone',
-        1: 'Sandstone',
+        0: 'Silt',
+        1: 'Sand',
         2: 'Sandstone',
         3: 'Limestone',
-        4: 'Mix Sand and Silt',
-        5: 'Siltstone',
-        6: 'Limestone',
-        7: 'Coal',
+        4: 'Coal',
+        5: 'Shalestone',
+        6: 'Quartz'
     }
 
 def main():
-    base_dir = Path(__file__).parent
+    print("========================================")
+    print("   YOLO Dataset Statistics Analyzer     ")
+    print("========================================")
+    
+    # Prompt user for the dataset path interactively
+    dataset_path_input = input("Enter the absolute path to your YOLO dataset folder (e.g., /path/to/dataset): ").strip()
+    base_dir = Path(dataset_path_input)
+    
+    if not base_dir.exists() or not base_dir.is_dir():
+        print(f"❌ Error: The path '{base_dir}' does not exist or is not a directory.")
+        return
+
     data_yaml_path = base_dir / 'data.yaml'
+    
+    if not data_yaml_path.exists():
+        print(f"❌ Error: data.yaml not found in {base_dir}. Please ensure it is a valid YOLO dataset.")
+        return
     
     # Load class names and number of classes
     class_names = load_class_names(data_yaml_path)

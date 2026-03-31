@@ -15,6 +15,7 @@ MASTER_CATEGORIES = {
 # Category name mapping for loose/inconsistent classes
 CATEGORY_MAPPING = {
     "Loose Sand": "Sandstone",
+    "Sand": "Sandstone",
     "Loose Silt": "Silt",
     "Loose Limestone": "Limestone"
 }

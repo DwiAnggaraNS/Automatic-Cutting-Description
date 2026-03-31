@@ -50,12 +50,11 @@ def create_simplified_mapping():
     """
     return {
         0: 'Silt',
-        1: 'Sand',
-        2: 'Sandstone',
-        3: 'Limestone',
-        4: 'Coal',
-        5: 'Shalestone',
-        6: 'Quartz'
+        1: 'Sandstone',
+        2: 'Limestone',
+        3: 'Coal',
+        4: 'Shalestone',
+        5: 'Quartz'
     }
 
 def main():

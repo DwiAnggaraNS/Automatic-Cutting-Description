@@ -44,23 +44,35 @@ def slice_large_images_in_dataset(input_dir, output_dir, slice_size=960, overlap
             min_area_ratio=0.1 # Drop annotations if less than 10% of them is visible in the slice
         )
         
-        # SAHI dumps the output in slightly different folder structure inside output_dir 
-        # (it usually creates 'instances_default_sliced/'). Let's organize it to match standard CVAT COCO.
-        sahi_output_folder = os.path.join(output_dir, "instances_default_sliced")
+        # SAHI writes its output to `output_dir` (which we passed as `output_dir`)
+        # It creates a json file there named `<output_coco_annotation_file_name>_sliced.json`
+        # and saves all sliced images directly inside `output_dir` or an internal folder depending on exactly how it parses its own internal path generation.
+        # usually it saves images straight to the `output_dir` in newer versions.
         
-        if os.path.exists(sahi_output_folder):
-            # Move json
-            sahi_json = os.path.join(sahi_output_folder, "instances_default_sliced.json")
-            if os.path.exists(sahi_json):
-                os.rename(sahi_json, os.path.join(out_annotations_dir, "instances_default.json"))
+        # Let's cleanly organize whatever SAHI dumped directly into `output_dir` into our CVAT structure
+        
+        sahi_json_output = os.path.join(output_dir, "instances_default_sliced.json")
+        if os.path.exists(sahi_json_output):
+            os.rename(sahi_json_output, os.path.join(out_annotations_dir, "instances_default.json"))
             
-            # Move images
-            for img_file in os.listdir(sahi_output_folder):
-                if img_file.endswith(('.png', '.jpg', '.jpeg')):
-                    os.rename(os.path.join(sahi_output_folder, img_file), os.path.join(out_images_dir, img_file))
-                    
-            # Cleanup SAHI temp folder
-            os.rmdir(sahi_output_folder)
+        # Move all images that were dumped in the root of output_dir into output_dir/images
+        # Note: SAHI might have also created an 'instances_default_sliced' suffix folder in older logic, 
+        # so we check both the root of output_dir and any potential subfolder.
+        
+        sahi_subfolder = os.path.join(output_dir, "instances_default_sliced")
+        image_source_dir = sahi_subfolder if os.path.exists(sahi_subfolder) else output_dir
+        
+        for item in os.listdir(image_source_dir):
+            item_path = os.path.join(image_source_dir, item)
+            # Skip directories (like 'images' and 'annotations' that we created)
+            if os.path.isdir(item_path):
+                continue
+            if item.lower().endswith(('.png', '.jpg', '.jpeg')):
+                os.rename(item_path, os.path.join(out_images_dir, item))
+
+        # Cleanup potential temp subfolder if it exists and is now empty
+        if os.path.exists(sahi_subfolder) and not os.listdir(sahi_subfolder):
+            os.rmdir(sahi_subfolder)
 
         print(f"\n✅ Successfully sliced dataset!")
         print(f"Results saved to: {output_dir}")

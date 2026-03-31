@@ -27,13 +27,16 @@ def merge_coco_datasets(input_folders, output_folder):
     for folder in input_folders:
         print(f"Processing folder: {folder}")
         
-        # Check if paths exist
+        # Check if paths exist (images and JSON, in either 'images/default' or 'images')
         images_in_dir = os.path.join(folder, 'images', 'default')
         json_path = os.path.join(folder, 'annotations', 'instances_default.json')
         
         if not os.path.exists(images_in_dir) or not os.path.exists(json_path):
-            print(f"Warning: Expected COCO structure not found in {folder}. Skipping.")
-            continue
+            # Try the alternative structure
+            images_in_dir = os.path.join(folder, 'images')
+            if not os.path.exists(images_in_dir) or not os.path.exists(json_path):
+                print(f"Warning: Expected COCO structure not found in {folder}. Skipping.")
+                continue
             
         # 1. Read JSON
         with open(json_path, 'r') as f:

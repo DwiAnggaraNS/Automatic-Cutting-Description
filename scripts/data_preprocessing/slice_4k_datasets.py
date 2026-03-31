@@ -36,9 +36,10 @@ def slice_large_images_in_dataset(input_dir, output_dir, slice_size=960, overlap
             image_dir=images_dir,
             output_coco_annotation_file_name="instances_default",
             output_dir=output_dir, # SAHI creates a folder named after the json name without ext
-            slice_size=[slice_size, slice_size],
-            overlap_ratio_x=overlap_ratio,
-            overlap_ratio_y=overlap_ratio,
+            slice_height=slice_size,
+            slice_width=slice_size,
+            overlap_height_ratio=overlap_ratio,
+            overlap_width_ratio=overlap_ratio,
             ignore_negative_samples=False, # Keep patches even if they have no annotations (useful for background learning)
             min_area_ratio=0.1 # Drop annotations if less than 10% of them is visible in the slice
         )

@@ -52,6 +52,7 @@ automatic-cutting-description/
 │   ├── data_preprocessing/
 │   │   ├── coco_polygon_simplification.py
 │   │   ├── convert_coco_to_yolo.py
+│   │   ├── convert_yolo_to_coco.py
 │   │   ├── merge_cvat_datasets.py
 │   │   ├── redistribute_dataset.py
 │   │   └── remap_coco_categories.py
@@ -100,7 +101,11 @@ Open `notebooks/training/YOLO_Trainer.ipynb` and click **Run All Cells**.
 ## Data Pipeline
 
 ```
-Raw Images + CVAT Annotation (Separated Tasks)
+[Optional] Legacy YOLO Dataset
+        ↓
+scripts/data_preprocessing/convert_yolo_to_coco.py   (Convert backward to COCO)
+        |
+Raw Images + CVAT Annotation (Separated Tasks) + Converted COCO
         ↓
 scripts/data_preprocessing/remap_coco_categories.py  (Standardize class names and IDs across datasets)
         ↓

@@ -33,28 +33,21 @@ def calculate_bbox_and_area(polygon):
     
     return bbox, area
 
-def convert_yolo_seg_to_coco(input_folder, output_folder):
+def convert_yolo_seg_parent_to_coco(parent_input_folder, output_folder):
     """
-    Converts a YOLO segmentation dataset split (images & labels folders) 
-    back into a CVAT-like COCO instance_default.json format.
+    Converts a legacy YOLO segmentation dataset with train/val/test splits
+    into a SINGLE unified CVAT-like COCO instance_default.json format.
     """
-    images_dir = os.path.join(input_folder, "images")
-    labels_dir = os.path.join(input_folder, "labels")
-    
-    if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
-        print(f"❌ Error: Expected 'images' and 'labels' directories inside {input_folder}")
-        return False
-        
     os.makedirs(output_folder, exist_ok=True)
     out_images_dir = os.path.join(output_folder, "images")
     out_annotations_dir = os.path.join(output_folder, "annotations")
     os.makedirs(out_images_dir, exist_ok=True)
     os.makedirs(out_annotations_dir, exist_ok=True)
     
-    # Initialize COCO structure
+    # Initialize unified COCO structure
     coco_data = {
         "licenses": [{"name": "", "id": 0, "url": ""}],
-        "info": {"contributor": "", "date_created": "", "description": "Converted from Legacy YOLO", "url": "", "version": "", "year": ""},
+        "info": {"contributor": "", "date_created": "", "description": "Converted from Legacy YOLO (Merged)", "url": "", "version": "", "year": ""},
         "categories": [{"id": k, "name": v} for k, v in LEGACY_CLASSES.items()],
         "images": [],
         "annotations": []
@@ -64,92 +57,109 @@ def convert_yolo_seg_to_coco(input_folder, output_folder):
     annotation_id_counter = 1
     
     valid_extensions = ('.jpg', '.jpeg', '.png')
+    splits = ['train', 'test', 'val']
     
-    # Iterate through images
-    for filename in os.listdir(images_dir):
-        if not filename.lower().endswith(valid_extensions):
+    for split in splits:
+        split_path = os.path.join(parent_input_folder, split)
+        if not os.path.isdir(split_path):
             continue
             
-        img_path = os.path.join(images_dir, filename)
-        base_name = os.path.splitext(filename)[0]
-        label_path = os.path.join(labels_dir, f"{base_name}.txt")
+        print(f"Reading split: {split}")
+        images_dir = os.path.join(split_path, "images")
+        labels_dir = os.path.join(split_path, "labels")
         
-        # Read image to get dimensions (required for COCO absolute coordinates)
-        try:
-            with Image.open(img_path) as img:
-                img_width, img_height = img.size
-        except Exception as e:
-            print(f"⚠️ Warning: Could not read image {filename}: {e}. Skipping.")
+        if not os.path.exists(images_dir) or not os.path.exists(labels_dir):
+            print(f"⚠️ Warning: Missing 'images' or 'labels' inside {split_path}. Skipping.")
             continue
             
-        # Copy image to output folder
-        shutil.copy(img_path, os.path.join(out_images_dir, filename))
-        
-        # Add image entry to COCO
-        coco_data["images"].append({
-            "id": image_id_counter,
-            "width": img_width,
-            "height": img_height,
-            "file_name": filename,
-            "license": 0,
-            "flickr_url": "",
-            "coco_url": "",
-            "date_captured": 0
-        })
-        
-        # Process corresponding YOLO label file if it exists
-        if os.path.exists(label_path):
-            with open(label_path, 'r') as f:
-                lines = f.readlines()
+        for filename in os.listdir(images_dir):
+            if not filename.lower().endswith(valid_extensions):
+                continue
                 
-            for line in lines:
-                parts = line.strip().split()
-                if not parts or len(parts) < 5:
-                    continue # Empty or invalid line (requires class + at least 3 points = 7 values)
+            img_path = os.path.join(images_dir, filename)
+            base_name = os.path.splitext(filename)[0]
+            label_path = os.path.join(labels_dir, f"{base_name}.txt")
+            
+            # Read image to get dimensions (required for COCO absolute coordinates)
+            try:
+                with Image.open(img_path) as img:
+                    img_width, img_height = img.size
+            except Exception as e:
+                print(f"⚠️ Warning: Could not read image {filename}: {e}. Skipping.")
+                continue
+                
+            # Copy image to unified output folder
+            shutil.copy(img_path, os.path.join(out_images_dir, filename))
+            
+            # Add image entry to COCO
+            coco_data["images"].append({
+                "id": image_id_counter,
+                "width": img_width,
+                "height": img_height,
+                "file_name": filename,
+                "license": 0,
+                "flickr_url": "",
+                "coco_url": "",
+                "date_captured": 0
+            })
+            
+            # Process corresponding YOLO label file if it exists
+            if os.path.exists(label_path):
+                with open(label_path, 'r') as f:
+                    lines = f.readlines()
                     
-                class_id = int(parts[0])
-                
-                # Reverse normalize coordinates: multiply by width and height
-                normalized_coords = [float(x) for x in parts[1:]]
-                absolute_coords = []
-                for i in range(len(normalized_coords)):
-                    if i % 2 == 0: # X coordinate
-                        absolute_coords.append(normalized_coords[i] * img_width)
-                    else: # Y coordinate
-                        absolute_coords.append(normalized_coords[i] * img_height)
-                
-                bbox, area = calculate_bbox_and_area(absolute_coords)
-                
-                coco_data["annotations"].append({
-                    "id": annotation_id_counter,
-                    "image_id": image_id_counter,
-                    "category_id": class_id,
-                    "segmentation": [absolute_coords],
-                    "area": area,
-                    "bbox": bbox,
-                    "iscrowd": 0,
-                    "attributes": {"occluded": False}
-                })
-                
-                annotation_id_counter += 1
-                
-        image_id_counter += 1
+                for line in lines:
+                    parts = line.strip().split()
+                    if not parts or len(parts) < 5:
+                        continue # Empty or invalid line
+                        
+                    class_id = int(parts[0])
+                    
+                    # Reverse normalize coordinates: multiply by width and height
+                    normalized_coords = [float(x) for x in parts[1:]]
+                    absolute_coords = []
+                    for i in range(len(normalized_coords)):
+                        if i % 2 == 0: # X coordinate
+                            absolute_coords.append(normalized_coords[i] * img_width)
+                        else: # Y coordinate
+                            absolute_coords.append(normalized_coords[i] * img_height)
+                    
+                    bbox, area = calculate_bbox_and_area(absolute_coords)
+                    
+                    coco_data["annotations"].append({
+                        "id": annotation_id_counter,
+                        "image_id": image_id_counter,
+                        "category_id": class_id,
+                        "segmentation": [absolute_coords],
+                        "area": area,
+                        "bbox": bbox,
+                        "iscrowd": 0,
+                        "attributes": {"occluded": False}
+                    })
+                    
+                    annotation_id_counter += 1
+                    
+            image_id_counter += 1
+
+    if image_id_counter == 1:
+        print("❌ Error: No valid images found across any splits.")
+        return False
         
     # Save the aggregated annotations to JSON
     out_json_path = os.path.join(out_annotations_dir, "instances_default.json")
     with open(out_json_path, 'w') as f:
         json.dump(coco_data, f, indent=4)
         
-    print(f"✅ Successfully converted YOLO dataset from {input_folder} to COCO format at {output_folder}")
-    print(f"   Processed {image_id_counter - 1} images and {annotation_id_counter - 1} annotations.\n")
+    print(f"\n✅ Successfully merged and converted YOLO dataset to unified COCO format at {output_folder}")
+    print(f"   Total Processed: {image_id_counter - 1} images and {annotation_id_counter - 1} annotations.")
     return True
 
 def main():
     print("===============================================")
-    print("   Legacy YOLO to COCO Conversion Tool         ")
+    print("   Legacy YOLO to COCO Conversion (Unified)    ")
     print("===============================================")
     print("This tool converts old train/val/test YOLO format splits")
-    print("back into CVAT-like COCO format for standard remapping.")
+    print("and merges them back into a SINGLE CVAT-like COCO format.")
     
     parent_input_path = input("\nEnter the absolute DIRECTORY path of the legacy dataset parent folder (e.g. /dataset/C_2026_1d80): ").strip()
     
@@ -157,24 +167,9 @@ def main():
         print(f"❌ Error: The path '{parent_input_path}' does not exist or is not a directory.")
         return
 
-    output_parent_path = input("Enter the absolute OUTPUT path for converted dataset (e.g. /dataset/C_2026_COCO): ").strip()
+    output_parent_path = input("Enter the absolute OUTPUT path for unified converted dataset (e.g. /dataset/C_2026_COCO): ").strip()
     
-    splits = ['train', 'test', 'val']
-    splits_found = 0
-    
-    for split in splits:
-        split_path = os.path.join(parent_input_path, split)
-        if os.path.isdir(split_path):
-            splits_found += 1
-            output_split_path = os.path.join(output_parent_path, split)
-            print(f"\nProcessing split: '{split}'...")
-            convert_yolo_seg_to_coco(split_path, output_split_path)
-            
-    if splits_found == 0:
-        print(f"⚠️ Warning: No 'train', 'test', or 'val' folders found inside {parent_input_path}.")
-    else:
-        print(f"\n🏁 Conversion process finished. Processed {splits_found} splits.")
-        print("You can now run remap_coco_categories.py on the new output split folders.")
+    convert_yolo_seg_parent_to_coco(parent_input_path, output_parent_path)
 
 if __name__ == "__main__":
     main()

@@ -151,24 +151,30 @@ def main():
     print("This tool converts old train/val/test YOLO format splits")
     print("back into CVAT-like COCO format for standard remapping.")
     
-    try:
-        num_folders = int(input("Enter the number of legacy yolov8 splits (e.g. train, val, test) to convert: "))
-    except ValueError:
-        print("❌ Invalid input for number of folders. Please enter an integer.")
+    parent_input_path = input("\nEnter the absolute DIRECTORY path of the legacy dataset parent folder (e.g. /dataset/C_2026_1d80): ").strip()
+    
+    if not os.path.exists(parent_input_path) or not os.path.isdir(parent_input_path):
+        print(f"❌ Error: The path '{parent_input_path}' does not exist or is not a directory.")
         return
 
-    if num_folders < 1:
-        print("❌ Number of folders must be at least 1.")
-        return
-
-    for i in range(num_folders):
-        input_path = input(f"\nEnter the absolute DIRECTORY path of legacy split {i + 1} (e.g. /dataset/train): ").strip()
-        output_path = input(f"Enter the absolute OUTPUT path for converted COCO split {i + 1} (e.g. /dataset/converted_coco_train): ").strip()
-        
-        print(f"Processing '{input_path}'...")
-        convert_yolo_seg_to_coco(input_path, output_path)
-
-    print("🏁 Conversion process finished. You can now use remap_coco_categories.py on the new output folders.")
+    output_parent_path = input("Enter the absolute OUTPUT path for converted dataset (e.g. /dataset/C_2026_COCO): ").strip()
+    
+    splits = ['train', 'test', 'val']
+    splits_found = 0
+    
+    for split in splits:
+        split_path = os.path.join(parent_input_path, split)
+        if os.path.isdir(split_path):
+            splits_found += 1
+            output_split_path = os.path.join(output_parent_path, split)
+            print(f"\nProcessing split: '{split}'...")
+            convert_yolo_seg_to_coco(split_path, output_split_path)
+            
+    if splits_found == 0:
+        print(f"⚠️ Warning: No 'train', 'test', or 'val' folders found inside {parent_input_path}.")
+    else:
+        print(f"\n🏁 Conversion process finished. Processed {splits_found} splits.")
+        print("You can now run remap_coco_categories.py on the new output split folders.")
 
 if __name__ == "__main__":
     main()

@@ -5,17 +5,16 @@ import json
 # Rock (dummy) is excluded here because it will either be dropped or halt the script
 MASTER_CATEGORIES = {
     "Silt": 1,
-    "Sand": 2,
-    "Sandstone": 3,
-    "Limestone": 4,
-    "Coal": 5,
-    "Shalestone": 6,
-    "Quartz": 7
+    "Sandstone": 2,
+    "Limestone": 3,
+    "Coal": 4,
+    "Shalestone": 5,
+    "Quartz": 6
 }
 
 # Category name mapping for loose/inconsistent classes
 CATEGORY_MAPPING = {
-    "Loose Sand": "Sand",
+    "Loose Sand": "Sandstone",
     "Loose Silt": "Silt",
     "Loose Limestone": "Limestone"
 }

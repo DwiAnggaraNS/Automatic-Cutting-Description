@@ -51,9 +51,16 @@ def slice_large_images_in_dataset(input_dir, output_dir, slice_size=960, overlap
         
         # Let's cleanly organize whatever SAHI dumped directly into `output_dir` into our CVAT structure
         
-        sahi_json_output = os.path.join(output_dir, "instances_default_sliced.json")
-        if os.path.exists(sahi_json_output):
-            os.rename(sahi_json_output, os.path.join(out_annotations_dir, "instances_default.json"))
+        # Check both potential names for the JSON output depending on SAHI version behavior
+        sahi_json_output_1 = os.path.join(output_dir, "instances_default_sliced.json")
+        sahi_json_output_2 = os.path.join(output_dir, "instances_default_coco.json")
+        
+        target_json_path = os.path.join(out_annotations_dir, "instances_default.json")
+        
+        if os.path.exists(sahi_json_output_1):
+            os.rename(sahi_json_output_1, target_json_path)
+        elif os.path.exists(sahi_json_output_2):
+            os.rename(sahi_json_output_2, target_json_path)
             
         # Move all images that were dumped in the root of output_dir into output_dir/images
         # Note: SAHI might have also created an 'instances_default_sliced' suffix folder in older logic, 

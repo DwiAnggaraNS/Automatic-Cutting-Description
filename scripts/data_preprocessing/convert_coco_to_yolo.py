@@ -3,101 +3,127 @@ import os
 import shutil
 import yaml
 
-# Function to convert images to YOLO format
 def convert_to_yolo(input_images_path, input_json_path, output_images_path, output_labels_path):
-    # Open JSON file containing image annotations
-    f = open(input_json_path)
-    data = json.load(f)
-    f.close()
+    """Converts a specific COCO split into YOLO segmentation format."""
+    
+    if not os.path.exists(input_json_path) or not os.path.exists(input_images_path):
+        print(f"⚠️ Missing images or JSON in {input_images_path}. Skipping.")
+        return False
+        
+    with open(input_json_path, 'r') as f:
+        data = json.load(f)
 
-    # Create directories for output images and labels
     os.makedirs(output_images_path, exist_ok=True)
     os.makedirs(output_labels_path, exist_ok=True)
 
-    # List to store filenames
-    file_names = []
-    for filename in os.listdir(input_images_path):
-        if filename.endswith(".png") or filename.endswith(".jpg"):
-            source = os.path.join(input_images_path, filename)
-            destination = os.path.join(output_images_path, filename)
-
-            # Check if the file already exists in the destination folder
-            if not os.path.exists(destination):
-                print(f"File {filename} already exists in the destination folder. Skipping...")
-                shutil.copy(source, destination)
-            file_names.append(filename)
-
-    # Function to get image annotations
-    def get_img_ann(image_id):
-        return [ann for ann in data['annotations'] if ann['image_id'] == image_id]
-
-    # Function to get image data
-    def get_img(filename):
-        return next((img for img in data['images'] if img['file_name'] == filename), None)
-
-    # Iterate through filenames and process each image
-    for filename in file_names:
-        img = get_img(filename)
-        img_id = img['id']
+    # Valid image files mapping
+    img_id_to_data = {img['id']: img for img in data.get('images', [])}
+    
+    # Process each valid image in the JSON
+    for img_id, img in img_id_to_data.items():
+        filename = img['file_name']
+        source = os.path.join(input_images_path, filename)
+        destination = os.path.join(output_images_path, filename)
+        
+        if not os.path.exists(source):
+            continue
+            
+        if not os.path.exists(destination):
+            shutil.copy(source, destination)
+            
         img_w = img['width']
         img_h = img['height']
-        img_ann = get_img_ann(img_id)
-
-        # Write normalized polygon data to a text file
+        
+        # Get annotations for this image
+        img_ann = [ann for ann in data.get('annotations', []) if ann['image_id'] == img_id]
+        
         if img_ann:
-            with open(os.path.join(output_labels_path, f"{os.path.splitext(filename)[0]}.txt"), "a") as file_object:
+            label_filename = f"{os.path.splitext(filename)[0]}.txt"
+            with open(os.path.join(output_labels_path, label_filename), "w") as file_object:
                 for ann in img_ann:
-                    current_category = ann['category_id'] - 1
+                    # Note: Our categories are 1-indexed (1: Silt, 2: Sand, etc.)
+                    # YOLO requires 0-indexed categories (0: Silt, 1: Sand, etc.)
+                    current_category = ann['category_id'] - 1 
+                    
+                    if not ann.get('segmentation') or len(ann['segmentation']) == 0:
+                        continue
+                        
                     polygon = ann['segmentation'][0]
-                    normalized_polygon = [format(coord / img_w if i % 2 == 0 else coord / img_h, '.6f') for i, coord in enumerate(polygon)]
+                    normalized_polygon = []
+                    
+                    for i, coord in enumerate(polygon):
+                        # Even index: X coordinate (width), Odd index: Y coordinate (height)
+                        norm_coord = coord / img_w if i % 2 == 0 else coord / img_h
+                        # Clamp between 0 and 1 to avoid YOLO out-of-bounds error
+                        norm_coord = max(0.0, min(1.0, norm_coord))
+                        normalized_polygon.append(format(norm_coord, '.6f'))
+                        
                     file_object.write(f"{current_category} " + " ".join(normalized_polygon) + "\n")
+                    
+    return True
 
-# Function to create a YAML file for the dataset
-def create_yaml(input_json_path, output_yaml_path, train_path, val_path, test_path=None):
-    with open(input_json_path) as f:
+def create_yaml(input_json_path, output_yaml_path):
+    """Creates the data.yaml file required by YOLO."""
+    with open(input_json_path, 'r') as f:
         data = json.load(f)
     
-    # Extract the category names
-    names = [category['name'] for category in data['categories']]
+    # Sort categories by ID to ensure correct indexing mapping
+    categories = sorted(data.get('categories', []), key=lambda x: x['id'])
+    names = [cat['name'] for cat in categories]
     
-    # Number of classes
-    nc = len(names)
-
-    # Create a dictionary with the required content
     yaml_data = {
         'names': names,
-        'nc': nc,
-        'test': test_path if test_path else '',
-        'train': train_path,
-        'val': val_path
+        'nc': len(names),
+        'train': 'train/images',
+        'val': 'val/images',
+        'test': 'test/images'
     }
 
-    # Write the dictionary to a YAML file
     with open(output_yaml_path, 'w') as file:
-        yaml.dump(yaml_data, file, default_flow_style=False)
+        yaml.dump(yaml_data, file, default_flow_style=False, sort_keys=False)
 
-def convertions(data: list[str]):
-    for item in data:
-        convert_to_yolo(
-            input_images_path=os.path.join(base_input_path, f"{item}/images"),
-            input_json_path=os.path.join(base_input_path, f"{item}/{item}_annotations.json"),
-            output_images_path=os.path.join(base_output_path, f"{item}/images"),
-            output_labels_path=os.path.join(base_output_path, f"{item}/labels")
-        )
+def main():
+    print("=========================================")
+    print("   COCO Splits to YOLO Format Converter ")
+    print("=========================================")
+    
+    input_base = input("\nEnter the DIRECTORY path of the Split COCO Dataset (containing train/val/test folders): ").strip()
+    
+    if not os.path.isdir(input_base):
+        print(f"❌ Error: {input_base} is not a valid directory.")
+        return
+        
+    output_base = input("Enter the OUTPUT path for the YOLO Dataset: ").strip()
+    
+    splits = ["train", "val", "test"]
+    processed_any = False
+    
+    for split in splits:
+        print(f"\nProcessing '{split}' split...")
+        split_in_dir = os.path.join(input_base, split)
+        
+        # Adjusting the path expectation based on redistribute_dataset output
+        images_in = os.path.join(split_in_dir, "images")
+        json_in = os.path.join(split_in_dir, "annotations", "instances_default.json")
+        
+        images_out = os.path.join(output_base, split, "images")
+        labels_out = os.path.join(output_base, split, "labels")
+        
+        success = convert_to_yolo(images_in, json_in, images_out, labels_out)
+        if success:
+            processed_any = True
+
+    if processed_any:
+        # Generate YAML using train split as base for classes
+        yaml_json_path = os.path.join(input_base, "train", "annotations", "instances_default.json")
+        if os.path.exists(yaml_json_path):
+            yaml_out_path = os.path.join(output_base, "data.yaml")
+            create_yaml(yaml_json_path, yaml_out_path)
+            print(f"\n✅ Created YOLO config file: {yaml_out_path}")
+            
+        print("\n🏁 Conversion to YOLO format complete!")
+    else:
+        print("\n❌ No valid splits found. Conversion aborted.")
 
 if __name__ == "__main__":
-    base_input_path = ""
-    base_output_path = ""
-
-    convertions(["train", "val", "test"])
-    
-    # Creating the YAML configuration file
-    create_yaml(
-        input_json_path=os.path.join(base_input_path, "train/train_annotations.json"),
-        output_yaml_path=os.path.join(base_output_path, "data.yaml"),
-        train_path="train/images",
-        val_path="val/images",
-        test_path="test/images"  # or None if not applicable
-    )
-
-    print("Conversion complete!")
+    main()

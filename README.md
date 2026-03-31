@@ -112,11 +112,11 @@ scripts/data_preprocessing/slice_4k_datasets.py      (Slice 4K images + polygons
         ↓
 scripts/data_preprocessing/remap_coco_categories.py  (Standardize class names and IDs across datasets)
         ↓
-scripts/data_preprocessing/merge_cvat_datasets.py    (Merge separated CVAT COCO datasets into one)
+scripts/data_preprocessing/merge_cvat_datasets.py    (Merge separated CVAT COCO datasets into one unified dataset)
         ↓
-scripts/data_preprocessing/convert_coco_to_yolo.py   (COCO → YOLO format)
+scripts/data_preprocessing/redistribute_dataset.py   (Multi-label Stratified train/val/test split on Unified COCO)
         ↓
-scripts/data_preprocessing/redistribute_dataset.py   (train/val/test split)
+scripts/data_preprocessing/convert_coco_to_yolo.py   (Convert COCO Splits → YOLO format)
         ↓
 scripts/data_analysis/get_statistics_data.py          (class balance check)
         ↓

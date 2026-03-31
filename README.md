@@ -55,7 +55,8 @@ automatic-cutting-description/
 │   │   ├── convert_yolo_to_coco.py
 │   │   ├── merge_cvat_datasets.py
 │   │   ├── redistribute_dataset.py
-│   │   └── remap_coco_categories.py
+│   │   ├── remap_coco_categories.py
+│   │   └── slice_4k_datasets.py
 │   ├── data_analysis/
 │   │   ├── get_statistics_data.py
 │   │   ├── minority_class_extractions.py
@@ -106,6 +107,8 @@ Open `notebooks/training/YOLO_Trainer.ipynb` and click **Run All Cells**.
 scripts/data_preprocessing/convert_yolo_to_coco.py   (Convert backward to COCO)
         |
 Raw Images + CVAT Annotation (Separated Tasks) + Converted COCO
+        ↓
+scripts/data_preprocessing/slice_4k_datasets.py      (Slice 4K images + polygons to 960x960 using SAHI)
         ↓
 scripts/data_preprocessing/remap_coco_categories.py  (Standardize class names and IDs across datasets)
         ↓

@@ -136,12 +136,11 @@ notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & metrics)
 | ID | Class Name               | Category  |
 |----|--------------------------|-----------|
 | 1  | Silt                     | Clastic   |
-| 2  | Sand                     | Clastic   |
-| 3  | Sandstone                | Clastic   |
-| 4  | Limestone                | Carbonate |
-| 5  | Coal                     | Organic   |
-| 6  | Shalestone               | Clastic   |
-| 7  | Quartz                   | Mineral   |
+| 2  | Sandstone                | Clastic   |
+| 3  | Limestone                | Carbonate |
+| 4  | Coal                     | Organic   |
+| 5  | Shalestone               | Clastic   |
+| 6  | Quartz                   | Mineral   |
 
 ---
 

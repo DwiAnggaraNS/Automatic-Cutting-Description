@@ -28,7 +28,7 @@ def merge_coco_datasets(input_folders, output_folder):
         print(f"Processing folder: {folder}")
         
         # Check if paths exist
-        images_in_dir = os.path.join(folder, 'images')
+        images_in_dir = os.path.join(folder, 'images', 'default')
         json_path = os.path.join(folder, 'annotations', 'instances_default.json')
         
         if not os.path.exists(images_in_dir) or not os.path.exists(json_path):

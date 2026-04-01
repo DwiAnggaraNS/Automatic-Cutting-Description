@@ -2,11 +2,13 @@ import os
 import json
 import shutil
 import random
-import argparse
 from collections import defaultdict
+from typing import Dict, List, Tuple, Set, Any
 
-def create_coco_structure(data_template, images, annotations):
-    """Factory to create a new COCO JSON structure."""
+def create_coco_structure(data_template: Dict[str, Any], images: List[Dict[str, Any]], annotations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Factory to create a new COCO JSON structure based on a template.
+    """
     return {
         "licenses": data_template.get("licenses", []),
         "info": data_template.get("info", {}),
@@ -15,79 +17,93 @@ def create_coco_structure(data_template, images, annotations):
         "annotations": annotations
     }
 
-def iterative_stratification(images, annotations, categories, ratios):
+def iterative_stratification(
+    images: List[Dict[str, Any]], 
+    annotations: List[Dict[str, Any]], 
+    categories: List[Dict[str, Any]], 
+    ratios: Tuple[float, float, float]
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[int, List[Dict[str, Any]]]]:
     """
     Splits images into train/val/test using a Greedy Multi-Label Stratification approach.
-    This ensures images with rare classes are distributed fairly.
+    Uses a normalized deficit ratio to distribute images fairly regardless of the target split size.
     """
-    train_r, val_r, test_r = ratios
+    train_ratio, val_ratio, test_ratio = ratios
     
-    # Map image id to its annotations and distinct categories
-    img_to_anns = defaultdict(list)
-    img_to_cats = defaultdict(set)
-    cat_counts = defaultdict(int)
+    # Map image ID to its annotations and distinct category IDs
+    image_to_annotations = defaultdict(list)
+    image_to_categories = defaultdict(set)
+    category_counts = defaultdict(int)
     
     for ann in annotations:
-        img_to_anns[ann["image_id"]].append(ann)
-        img_to_cats[ann["image_id"]].add(ann["category_id"])
-        cat_counts[ann["category_id"]] += 1
+        image_to_annotations[ann["image_id"]].append(ann)
+        image_to_categories[ann["image_id"]].add(ann["category_id"])
+        category_counts[ann["category_id"]] += 1
         
-    # Calculate target counts for each split per category
+    # Calculate target instance counts for each split per category
     targets = {
-        "train": {cat: count * train_r for cat, count in cat_counts.items()},
-        "val": {cat: count * val_r for cat, count in cat_counts.items()},
-        "test": {cat: count * test_r for cat, count in cat_counts.items()}
+        "train": {cat: count * train_ratio for cat, count in category_counts.items()},
+        "val":   {cat: count * val_ratio for cat, count in category_counts.items()},
+        "test":  {cat: count * test_ratio for cat, count in category_counts.items()}
     }
     
-    current = {
+    current_counts = {
         "train": defaultdict(int),
-        "val": defaultdict(int),
-        "test": defaultdict(int)
+        "val":   defaultdict(int),
+        "test":  defaultdict(int)
     }
     
-    # Sort images: prioritize images with the rarest categories to be assigned first
-    # We score an image based on the rarity of its categories (sum of 1/total_count)
-    def img_rarity_score(img):
-        return sum(1.0 / cat_counts[c] for c in img_to_cats[img["id"]])
+    # Sort images by rarity. Images with the rarest combination of categories are assigned first
+    def compute_image_rarity_score(img: Dict[str, Any]) -> float:
+        return sum(1.0 / category_counts[cat] for cat in image_to_categories[img["id"]])
         
-    sorted_images = sorted(images, key=img_rarity_score, reverse=True)
+    sorted_images = sorted(images, key=compute_image_rarity_score, reverse=True)
     
     splits = {"train": [], "val": [], "test": []}
+    available_splits = ["train", "val", "test"]
     
     for img in sorted_images:
-        cats_in_img = img_to_cats[img["id"]]
+        cats_in_image = image_to_categories[img["id"]]
         
-        # Calculate assignment cost for each split
-        # We want to assign to the split that has the highest deficit for these categories
         best_split = "train"
-        max_deficit = -float('inf')
+        max_score = -float('inf')
         
-        for split in ["train", "val", "test"]:
-            split_deficit = 0
-            for cat in cats_in_img:
-                # Difference between target and current proportion
-                deficit = targets[split][cat] - current[split][cat]
-                split_deficit += deficit
+        # Evaluate assignment cost for each split
+        # We want to assign the image to the split that has the highest proportional deficit
+        for split in available_splits:
+            split_score = 0.0
             
-            if split_deficit > max_deficit:
-                max_deficit = split_deficit
+            for cat in cats_in_image:
+                instances_in_img = sum(1 for a in image_to_annotations[img["id"]] if a["category_id"] == cat)
+                target = targets[split][cat]
+                
+                if target > 0:
+                    # Normalized Deficit: How much of the target is STILL missing relative to the target size?
+                    # This prevents the larger partition (e.g., 'train') from greedy absorbing all minority classes natively.
+                    future_count = current_counts[split][cat] + instances_in_img
+                    deficit_ratio = (target - future_count) / target
+                    split_score += deficit_ratio
+                else:
+                    # Penalize assignment if the algorithm assigns a category with target 0
+                    split_score -= (current_counts[split][cat] + instances_in_img)
+            
+            if split_score > max_score:
+                max_score = split_score
                 best_split = split
                 
-        # Assign image to best split
+        # Assign image to the chosen split
         splits[best_split].append(img)
         
-        # Update current counts
-        for cat in cats_in_img:
-            # We count occurrences based on instances, though could be boolean based
-            instances_in_img = sum(1 for a in img_to_anns[img["id"]] if a["category_id"] == cat)
-            current[best_split][cat] += instances_in_img
+        # Update the tracked current counts
+        for cat in cats_in_image:
+            instances_in_img = sum(1 for a in image_to_annotations[img["id"]] if a["category_id"] == cat)
+            current_counts[best_split][cat] += instances_in_img
 
-    return splits, img_to_anns
+    return splits, image_to_annotations
 
-def redistribute_dataset(input_dir, output_dir, ratios=(0.8, 0.1, 0.1)):
+def redistribute_dataset(input_dir: str, output_dir: str, ratios: Tuple[float, float, float] = (0.8, 0.1, 0.1)) -> bool:
     """
-    Reads a unified COCO dataset, applies iterative stratification, 
-    and outputs split COCO datasets.
+    Reads a unified COCO dataset, applies normalized iterative stratification, 
+    and outputs split COCO datasets structure via dedicated folders.
     """
     json_path = os.path.join(input_dir, "annotations", "instances_default.json")
     img_dir = os.path.join(input_dir, "images")
@@ -103,8 +119,8 @@ def redistribute_dataset(input_dir, output_dir, ratios=(0.8, 0.1, 0.1)):
     annotations = data.get("annotations", [])
     categories = data.get("categories", [])
     
-    print("\n⏳ Applying Iterative Multi-Label Stratification...")
-    splits, img_to_anns = iterative_stratification(images, annotations, categories, ratios)
+    print("\n⏳ Applying Iterative Multi-Label Stratification (Normalized Ratio)...")
+    splits, image_to_annotations = iterative_stratification(images, annotations, categories, ratios)
     
     for split_name in ["train", "val", "test"]:
         split_images = splits[split_name]
@@ -113,10 +129,10 @@ def redistribute_dataset(input_dir, output_dir, ratios=(0.8, 0.1, 0.1)):
             print(f"⚠️ Warning: Split '{split_name}' has 0 images. Adjust your ratios.")
             continue
             
-        # Collect annotations for this split
+        # Collect annotations for the images in this split
         split_annotations = []
         for img in split_images:
-            split_annotations.extend(img_to_anns[img["id"]])
+            split_annotations.extend(image_to_annotations[img["id"]])
             
         # Prepare output directories
         split_dir = os.path.join(output_dir, split_name)
@@ -126,29 +142,29 @@ def redistribute_dataset(input_dir, output_dir, ratios=(0.8, 0.1, 0.1)):
         os.makedirs(out_img_dir, exist_ok=True)
         os.makedirs(out_ann_dir, exist_ok=True)
         
-        # Save JSON
+        # Save the new subset JSON
         split_data = create_coco_structure(data, split_images, split_annotations)
-        with open(os.path.join(out_ann_dir, f"instances_default.json"), 'w') as f:
+        with open(os.path.join(out_ann_dir, "instances_default.json"), 'w') as f:
             json.dump(split_data, f, indent=4)
             
-        # Copy Images
+        # Copy images over to the required split directory
         for img in split_images:
             src = os.path.join(img_dir, img["file_name"])
             dst = os.path.join(out_img_dir, img["file_name"])
             if os.path.exists(src):
                 shutil.copy(src, dst)
                 
-        print(f"✅ Created '{split_name}': {len(split_images)} images, {len(split_annotations)} annotations.")
+        print(f"✅ Created '{split_name}': {len(split_images):>5} images, {len(split_annotations):>6} annotations.")
         
-    print(f"\n🏁 Finished redistribution! Stored at: {output_dir}")
+    print(f"\n🏁 Finished dataset redistribution! Stored sequentially at:\n   ➡️ {output_dir}")
     return True
 
 def main():
     print("====================================================")
-    print("   COCO Dataset Multi-Label Stratified Splitter    ")
+    print("   COCO Dataset Multi-Label Stratified Splitter     ")
     print("====================================================")
-    print("This script uses Iterative Stratification to split")
-    print("datasets while preserving minority class distribution.")
+    print("This script uses Normalized Iterative Stratification")
+    print("to fairly split datasets while preserving class distribution.")
     
     input_path = input("\nEnter the DIRECTORY path of the UNIFIED COCO dataset: ").strip()
     output_path = input("Enter the OUTPUT parent path for the split dataset: ").strip()
@@ -158,18 +174,18 @@ def main():
         val_input = input("Enter Validation ratio (default 0.1): ").strip()
         test_input = input("Enter Test ratio (default 0.1): ").strip()
 
-        train_r = float(train_input) if train_input else 0.8
-        val_r = float(val_input) if val_input else 0.1
-        test_r = float(test_input) if test_input else 0.1
+        train_ratio = float(train_input) if train_input else 0.8
+        val_ratio = float(val_input) if val_input else 0.1
+        test_ratio = float(test_input) if test_input else 0.1
     except ValueError:
-        print("❌ Error: Invalid ratios. Using defaults (0.8, 0.1, 0.1).")
-        train_r, val_r, test_r = 0.8, 0.1, 0.1
+        print("❌ Error: Invalid ratio formatting. Using default rules (0.8, 0.1, 0.1).")
+        train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
     
-    if abs((train_r + val_r + test_r) - 1.0) > 1e-5:
-        print("❌ Error: Ratios must sum up to 1.0")
+    if abs((train_ratio + val_ratio + test_ratio) - 1.0) > 1e-5:
+        print("❌ Error: Total cumulative ratios must exactly sum up to 1.0 (e.g., 0.8 + 0.1 + 0.1).")
         return
         
-    redistribute_dataset(input_path, output_path, (train_r, val_r, test_r))
+    redistribute_dataset(input_path, output_path, (train_ratio, val_ratio, test_ratio))
 
 if __name__ == "__main__":
     main()

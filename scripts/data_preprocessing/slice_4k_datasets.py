@@ -2,21 +2,38 @@ import os
 import argparse
 from sahi.slicing import slice_coco
 
-def slice_large_images_in_dataset(input_dir, output_dir, slice_size=960, overlap_ratio=0.2):
+def slice_large_images_in_dataset(input_dir, output_dir, slice_size=640, overlap_ratio=0.2):
     """
-    Slices large images (e.g., 4K) into smaller patches (e.g., 960x960) 
+    Slices large images (e.g., 4K) into smaller patches (e.g., 640x640) to avoid OOM errors during YOLO training
     and automatically adjusts the COCO polygon annotations using SAHI.
     
     Images smaller than the slice_size will remain intact.
+
+    Args:
+        input_dir    : Path to COCO dataset (must contain images/ and annotations/)
+        output_dir   : Path to save sliced dataset
+        slice_size   : Tile size in pixels (default: 640, must be multiple of 32)
+        overlap_ratio: Overlap between tiles (default: 0.2 = 20%)
+
     """
+
+    # --- Validate slice_size ---
+    if slice_size % 32 != 0:
+        print(f"❌ Error: slice_size={slice_size} is not a multiple of 32.")
+        print("   YOLO requires image sizes to be multiples of 32 (e.g. 640, 960, 1280).")
+        return False
+
     coco_json_path = os.path.join(input_dir, "annotations", "instances_default.json")
     images_dir = os.path.join(input_dir, "images")
     
-    if not os.path.exists(coco_json_path) or not os.path.exists(images_dir):
-        print(f"❌ Error: Could not find COCO dataset structure in {input_dir}")
-        print("Expected 'images/' folder and 'annotations/instances_default.json'")
+    if not os.path.exists(coco_json_path):
+        print(f"❌ Error: Could not find annotations at:\n   {coco_json_path}")
+        return False
+    if not os.path.exists(images_dir):
+        print(f"❌ Error: Could not find images directory at:\n   {images_dir}")
         return False
         
+    # --- Prepare output directories ---
     os.makedirs(output_dir, exist_ok=True)
     out_images_dir = os.path.join(output_dir, "images")
     out_annotations_dir = os.path.join(output_dir, "annotations")
@@ -24,10 +41,12 @@ def slice_large_images_in_dataset(input_dir, output_dir, slice_size=960, overlap
     os.makedirs(out_annotations_dir, exist_ok=True)
 
     print("\n⏳ Starting SAHI Slicing Process...")
-    print(f"Input: {input_dir}")
-    print(f"Target Slice Size: {slice_size}x{slice_size}")
-    print(f"Overlap Ratio: {overlap_ratio}")
-    print("Please wait, this might take a few minutes depending on dataset size...\n")
+    print(f"  Input       : {input_dir}")
+    print(f"  Output      : {output_dir}")
+    print(f"  Slice Size  : {slice_size}x{slice_size}px  ← set YOLO imgsz={slice_size}")
+    print(f"  Overlap     : {int(overlap_ratio * 100)}%")
+    print("=" * 55)
+    print("\n⏳ Starting SAHI slicing... (may take a few minutes)\n")
 
     try:
         # SAHI will slice images, adjust polygons, and save the new images/json
@@ -100,17 +119,29 @@ def main():
     print("This tool slices high-resolution images (e.g. 4K)")
     print("into smaller grids to prevent YOLO detail loss.")
     
-    input_path = input("\nEnter the absolute DIRECTORY path of the COCO dataset to slice: ").strip()
-    
-    if not os.path.exists(input_path) or not os.path.isdir(input_path):
-        print(f"❌ Error: The path '{input_path}' does not exist or is not a directory.")
+    input_path = input("Enter the ABSOLUTE path of the input COCO dataset directory:\n> ").strip()
+    if not os.path.isdir(input_path):
+        print(f"❌ Error: '{input_path}' does not exist or is not a directory.")
         return
-
-    output_path = input("Enter the absolute OUTPUT path for sliced dataset (e.g. /dataset/C_2026_Sliced): ").strip()
-    
-    # Default parameters based on best practices
-    slice_size = 960 # Matches our YOLO training imgsz
-    overlap_ratio = 0.2 # 20% overlap to avoid cutting rocks at borders
+ 
+    output_path = input("\nEnter the ABSOLUTE path for the sliced output dataset:\n> ").strip()
+    if not output_path:
+        print("❌ Error: Output path cannot be empty.")
+        return
+ 
+    slice_input = input(f"\nEnter slice size in pixels [default: 640, options: 640 / 960 / 1280]:\n> ").strip()
+    try:
+        slice_size = int(slice_input) if slice_input else 640
+    except ValueError:
+        print("⚠️  Invalid input, using default slice size: 640")
+        slice_size = 640
+ 
+    overlap_input = input(f"\nEnter overlap ratio [default: 0.2 = 20%]:\n> ").strip()
+    try:
+        overlap_ratio = float(overlap_input) if overlap_input else 0.2
+    except ValueError:
+        print("⚠️  Invalid input, using default overlap: 0.2")
+        overlap_ratio = 0.2
     
     slice_large_images_in_dataset(input_path, output_path, slice_size, overlap_ratio)
 

@@ -3,8 +3,12 @@
 # ============================================================
 
 # Model weights & checkpoints (large binary files)
-models/*
+models/
+**/models/
+!**/models/.gitkeep
 !models/.gitkeep
+**/*.pt
+**/*.pth
 *.pt
 *.pth
 *.onnx

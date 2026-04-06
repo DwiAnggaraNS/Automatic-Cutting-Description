@@ -4,20 +4,30 @@ import json
 # Master schema for final fixed categories
 # Rock (dummy) is excluded here because it will either be dropped or halt the script
 MASTER_CATEGORIES = {
-    "Silt": 1,
-    "Sandstone": 2,
-    "Limestone": 3,
-    "Coal": 4,
-    "Shalestone": 5,
-    "Quartz": 6
+    "CLAS - Silt": 1,
+    "CLAS - Sandstone": 2,
+    "CARB - Limestone": 3,
+    "ORG - Coal": 4,         
+    "CLAS - Shalestone": 5,
+    "MIN - Quartz": 6        
 }
 
 # Category name mapping for loose/inconsistent classes
+# Mapping old name from CVAT (left) to standard name using Prefix (rigjt)
 CATEGORY_MAPPING = {
-    "Loose Sand": "Sandstone",
-    "Sand": "Sandstone",
-    "Loose Silt": "Silt",
-    "Loose Limestone": "Limestone"
+    # Mapping for standard names
+    "Silt": "CLAS - Silt",
+    "Sandstone": "CLAS - Sandstone",
+    "Limestone": "CARB - Limestone",
+    "Coal": "ORG - Coal",
+    "Shalestone": "CLAS - Shalestone",
+    "Quartz": "MIN - Quartz",
+    
+    # Mapping for loose classes
+    "Loose Sand": "CLAS - Sandstone",
+    "Sand": "CLAS - Sandstone",
+    "Loose Silt": "CLAS - Silt",
+    "Loose Limestone": "CARB - Limestone"
 }
 
 # Categories that should be completely dropped from the annotations

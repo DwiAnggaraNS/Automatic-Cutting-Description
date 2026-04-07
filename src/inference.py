@@ -122,32 +122,48 @@ class RockVisualizer:
                 cv2.fillPoly(mask_img, [poly], color)
         return mask_img
 
-    def plot_comparison(self, original_bgr, hollow_rgb, mask_only_rgb, title_suffix=""):
+    def plot_advanced_comparison(self, original_bgr, raw_hollow, proc_hollow, raw_solid, proc_solid, title_suffix=""):
         """
-        Builds a comprehensive 3-panel matplotlib figure for Jupyter and image exports.
+        Builds a comprehensive 2x3 matplotlib figure showing Original, Raw, and Post-Processed
+        visualizations side-by-side for both hollow and solid styles.
         """
         original_rgb = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2RGB)
         
-        fig, axes = plt.subplots(1, 3, figsize=(24, 8))
+        fig, axes = plt.subplots(2, 3, figsize=(24, 16))
         
-        axes[0].imshow(original_rgb)
-        axes[0].set_title(f"Original Image {title_suffix}", fontsize=16)
-        axes[0].axis('off')
+        # Row 1: Hollow Contours
+        axes[0, 0].imshow(original_rgb)
+        axes[0, 0].set_title(f"Original Image", fontsize=16)
+        axes[0, 0].axis('off')
         
-        axes[1].imshow(hollow_rgb)
-        axes[1].set_title(f"Hollow Contours (Processed) {title_suffix}", fontsize=16)
-        axes[1].axis('off')
+        axes[0, 1].imshow(raw_hollow)
+        axes[0, 1].set_title(f"Raw Prediction (Hollow) {title_suffix}", fontsize=16)
+        axes[0, 1].axis('off')
         
-        axes[2].imshow(mask_only_rgb)
-        axes[2].set_title(f"Solid Masks Only {title_suffix}", fontsize=16)
-        axes[2].axis('off')
+        axes[0, 2].imshow(proc_hollow)
+        axes[0, 2].set_title(f"Post-processed (Hollow) {title_suffix}", fontsize=16)
+        axes[0, 2].axis('off')
+        
+        # Row 2: Solid Masks
+        axes[1, 0].imshow(original_rgb)
+        axes[1, 0].set_title(f"Original Image", fontsize=16)
+        axes[1, 0].axis('off')
+        
+        axes[1, 1].imshow(raw_solid)
+        axes[1, 1].set_title(f"Raw Prediction (Solid) {title_suffix}", fontsize=16)
+        axes[1, 1].axis('off')
+        
+        axes[1, 2].imshow(proc_solid)
+        axes[1, 2].set_title(f"Post-processed (Solid) {title_suffix}", fontsize=16)
+        axes[1, 2].axis('off')
         
         # Consistent legend
         legend_elements = [
             Patch(facecolor=[c/255 for c in color], edgecolor='k', label=self.class_names.get(id, f"ID {id}")) 
             for id, color in self.class_colors.items()
         ]
-        axes[2].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.25, 1))
+        axes[0, 2].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.25, 1))
+        axes[1, 2].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.25, 1))
         
         plt.tight_layout()
         return fig

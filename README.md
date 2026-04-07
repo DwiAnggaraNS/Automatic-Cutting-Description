@@ -43,7 +43,8 @@ automatic-cutting-description/
 │   │   ├── YOLO_Trainer.ipynb           # Main training notebook
 │   │   └── YOLO_Trainer_Original.ipynb  # Reference/baseline notebook
 │   ├── evaluation/
-│   │   └── Independent_Evaluator.ipynb  # Model evaluation & metrics
+│   │   ├── Independent_Evaluator.ipynb  # Model evaluation & metrics
+│   │   └── Interactive_Inference.ipynb  # Single image test inference & mask exploration
 │   └── exploration/
 │       ├── YOLO_Visualizer.ipynb        # Training visualization & comparison
 │       └── SAM_AutomaticMaskGenerator.ipynb  # SAM mask generation pipeline
@@ -126,7 +127,9 @@ scripts/data_analysis/minority_class_generator.py    (synthetic augmentation)
         ↓
 notebooks/training/YOLO_Trainer.ipynb                (model training)
         ↓
-notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & metrics)
+notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & multi-model metrics)
+        ↓
+notebooks/evaluation/Interactive_Inference.ipynb     (visual & post-processing UI tests)
 ```
 
 ---

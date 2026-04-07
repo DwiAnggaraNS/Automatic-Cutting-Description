@@ -17,7 +17,6 @@ models/
 
 # Training outputs
 runs/
-training_history.txt
 wandb/
 mlruns/
 

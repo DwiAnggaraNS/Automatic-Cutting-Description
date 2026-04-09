@@ -1,0 +1,159 @@
+import cv2
+import numpy as np
+import torch
+from PIL import Image
+import torchvision.transforms as T
+from ultralytics import YOLO
+
+class DualModelPipeline:
+    """
+    Integration Pipeline for Stage 1 (Segmentor) -> Stage 2 (Classifier)
+    This handles predicting masks on an original image, extracting those masks/bboxes as crops,
+    and classifying those crops with expert classifier models.
+    """
+    def __init__(self, segmentor_path, classifier_configs, device=None):
+        self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        print(f"Loading Segmentor: {segmentor_path}")
+        self.segmentor = YOLO(segmentor_path)
+        self.classifiers = {}
+        
+        # Setup standard image transforms for PyTorch-based classifiers (EfficientNet, ViT)
+        self.transform = T.Compose([
+            T.Resize((224, 224)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+        # Load specified classifiers
+        for cfg in classifier_configs:
+            name = cfg['name']
+            path_or_model = cfg['model']
+            model_type = cfg.get('type', 'yolo')
+            class_names = cfg.get('class_names', {})
+            
+            print(f"Loading Classifier [{name}] (Type: {model_type})")
+            
+            if model_type == 'yolo':
+                self.classifiers[name] = {
+                    'obj': YOLO(path_or_model),
+                    'type': 'yolo',
+                    'names': class_names
+                }
+            else:
+                # PyTorch model (already instantiated in memory or loaded from weights)
+                if isinstance(path_or_model, str):
+                    model_obj = torch.load(path_or_model).to(self.device).eval()
+                else:
+                    model_obj = path_or_model.to(self.device).eval()
+                
+                self.classifiers[name] = {
+                    'obj': model_obj,
+                    'type': 'pytorch',
+                    'names': class_names
+                }
+
+    def predict(self, image, classifier_name):
+        """
+        Predict masks using the segmentor, isolate rock instances, and classify each crop.
+        """
+        # Ensure image is a numpy array
+        if isinstance(image, str):
+            image = cv2.imread(image)
+            
+        original_image = image.copy()
+            
+        # ─── STAGE 1: SEGMENTOR ─────────────────────────────────────
+        results = self.segmentor(image, verbose=False)[0]
+        if results.masks is None:
+            return results, []
+
+        boxes = results.boxes.xyxy.cpu().numpy()
+        masks = results.masks.xy
+        
+        final_predictions = []
+        classifier_info = self.classifiers[classifier_name]
+        clf_model = classifier_info['obj']
+        clf_type = classifier_info['type']
+        idx_to_name = classifier_info['names']
+        
+        # ─── STAGE 2: CLASSIFIER ────────────────────────────────────
+        for box, mask in zip(boxes, masks):
+            x1, y1, x2, y2 = map(int, box)
+            h, w = image.shape[:2]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(w, x2), min(h, y2)
+            
+            crop = original_image[y1:y2, x1:x2]
+            if crop.size == 0 or crop.shape[0] == 0 or crop.shape[1] == 0:
+                continue
+            
+            if clf_type == 'yolo':
+                # YOLO Classification Inference
+                cls_res = clf_model(crop, verbose=False)[0]
+                pred_class_id = int(cls_res.probs.top1)
+                conf = float(cls_res.probs.top1conf)
+                class_name = idx_to_name.get(pred_class_id, cls_res.names.get(pred_class_id, f"Class_{pred_class_id}"))
+            else:
+                # Standard PyTorch Classification Inference
+                pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+                input_tensor = self.transform(pil_crop).unsqueeze(0).to(self.device)
+                
+                with torch.no_grad():
+                    outputs = clf_model(input_tensor)
+                    probs = torch.nn.functional.softmax(outputs[0], dim=0)
+                    conf, pred_class_id = torch.max(probs, 0)
+                    pred_class_id = pred_class_id.item()
+                    conf = conf.item()
+                    class_name = idx_to_name.get(pred_class_id, f"Class_{pred_class_id}")
+
+            final_predictions.append({
+                'box': box,
+                'mask': mask,
+                'class_id': pred_class_id,
+                'class_name': class_name,
+                'conf': conf
+            })
+            
+        return results, final_predictions
+
+
+class DualModelVisualizer:
+    """
+    Handles robust visualization rendering hollow contours and label text overlays.
+    """
+    def __init__(self, color_map=None):
+        self.color_map = color_map or {}
+        
+    def _get_color(self, class_id):
+        if class_id not in self.color_map:
+            np.random.seed(class_id + 42) # Consistent random color based on ID
+            self.color_map[class_id] = tuple(map(int, np.random.randint(50, 255, 3)))
+        return self.color_map[class_id]
+
+    def draw(self, image, predictions, thickness=2):
+        vis_img = image.copy()
+        
+        for pred in predictions:
+            mask = np.array(pred['mask'], dtype=np.int32)
+            class_id = pred['class_id']
+            class_name = pred['class_name']
+            conf = pred['conf']
+            
+            color = self._get_color(class_id)
+            
+            # Draw hollow contour
+            cv2.polylines(vis_img, [mask], isClosed=True, color=color, thickness=thickness)
+            
+            # Draw bounding box and label
+            x, y = int(pred['box'][0]), int(pred['box'][1])
+            label = f"{class_name} {conf:.2f}"
+            
+            # Background for text
+            (txt_w, txt_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.rectangle(vis_img, (x, max(0, y - txt_h - 10)), (x + txt_w, max(0, y)), color, -1)
+            
+            # Text
+            cv2.putText(vis_img, label, (x, max(10, y - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                        
+        return vis_img

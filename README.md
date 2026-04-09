@@ -58,6 +58,8 @@ automatic-cutting-description/
 │   │   ├── coco_polygon_simplification.py
 │   │   ├── convert_coco_to_yolo.py
 │   │   ├── convert_yolo_to_coco.py
+│   │   ├── convert_to_single_class_yolo.py  # Stage 1 Dataset Prep
+│   │   ├── extract_classifier_crops.py      # Stage 2 Dataset Prep
 │   │   ├── merge_cvat_datasets.py
 │   │   ├── redistribute_dataset.py
 │   │   ├── remap_coco_categories.py
@@ -129,9 +131,9 @@ scripts/data_analysis/minority_class_extractions.py  (extract minority classes)
         ↓
 scripts/data_analysis/minority_class_generator.py    (synthetic augmentation)
         ↓
-notebooks/training/YOLO_Trainer.ipynb                (model training)
+notebooks/training/Dual_Model_Trainer.ipynb          (Stage 1 Seg & Stage 2 Cls)
         ↓
-notebooks/evaluation/Independent_Evaluator.ipynb     (evaluation & multi-model metrics)
+        ...
         ↓
 notebooks/evaluation/Interactive_Inference.ipynb     (visual & post-processing UI tests)
 ```

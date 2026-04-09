@@ -21,10 +21,17 @@ wandb/
 mlruns/
 
 # Datasets (keep only scripts, not actual data)
-datasets/
 data/images/
 data/labels/
 augment_library/
+sam_weight/*
+images/*
+sam_output/*
+**/data/
+images/*
+cvat_import/*
+batch3/*
+batch4/*
 
 # ============================================================
 # Python

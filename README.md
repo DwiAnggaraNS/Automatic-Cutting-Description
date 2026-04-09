@@ -42,12 +42,16 @@ automatic-cutting-description/
 │   ├── training/
 │   │   ├── YOLO_Trainer.ipynb           # Main training notebook
 │   │   └── YOLO_Trainer_Original.ipynb  # Reference/baseline notebook
-│   ├── evaluation/
-│   │   ├── Independent_Evaluator.ipynb  # Model evaluation & metrics
-│   │   └── Interactive_Inference.ipynb  # Single image test inference & mask exploration
+│   └── evaluation/
+│       ├── Independent_Evaluator.ipynb  # Model evaluation & metrics
+│       └── Interactive_Inference.ipynb  # Single image test inference & mask exploration
 │   └── exploration/
-│       ├── YOLO_Visualizer.ipynb        # Training visualization & comparison
-│       └── SAM_AutomaticMaskGenerator.ipynb  # SAM mask generation pipeline
+│       └── YOLO_Visualizer.ipynb        # Training visualization & comparison
+│
+├── datasets/                       # Dataset processing and SAM Annotation
+│   ├── sam-annotation/
+│   │   ├── 01_sam_auto_segmentation.ipynb # SAM mask generation pipeline
+│   │   └── 02_cvat_converter.ipynb        # CVAT XML converter
 │
 ├── scripts/                        # Utility scripts
 │   ├── data_preprocessing/

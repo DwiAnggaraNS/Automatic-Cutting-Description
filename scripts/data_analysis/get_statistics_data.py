@@ -54,7 +54,8 @@ def create_simplified_mapping():
         2: 'Limestone',
         3: 'Coal',
         4: 'Shalestone',
-        5: 'Quartz'
+        5: 'Quartz',
+        6: 'Cement'
     }
 
 def main():

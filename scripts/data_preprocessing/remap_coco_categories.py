@@ -9,7 +9,8 @@ MASTER_CATEGORIES = {
     "CARB - Limestone": 3,
     "ORG - Coal": 4,         
     "CLAS - Shalestone": 5,
-    "MIN - Quartz": 6        
+    "MIN - Quartz": 6,
+    "ART - Cement": 7        
 }
 
 # Category name mapping for loose/inconsistent classes
@@ -22,6 +23,7 @@ CATEGORY_MAPPING = {
     "Coal": "ORG - Coal",
     "Shalestone": "CLAS - Shalestone",
     "Quartz": "MIN - Quartz",
+    "Cement": "ART - Cement",
     
     # Mapping for loose classes
     "Loose Sand": "CLAS - Sandstone",

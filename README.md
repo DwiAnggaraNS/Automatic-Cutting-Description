@@ -148,6 +148,7 @@ notebooks/evaluation/Interactive_Inference.ipynb     (visual & post-processing U
 | 4  | Coal                     | Organic   |
 | 5  | Shalestone               | Clastic   |
 | 6  | Quartz                   | Mineral   |
+| 7  | Cement                   | Artificial|
 
 ---
 

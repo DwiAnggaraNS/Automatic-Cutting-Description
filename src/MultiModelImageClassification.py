@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms, models
-import timm  # Pastikan sudah terinstall: pip install timm
+import timm  # Ensure timm is installed: pip install timm
 from tqdm import tqdm
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score

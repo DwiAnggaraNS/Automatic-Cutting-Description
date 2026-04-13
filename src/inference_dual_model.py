@@ -13,18 +13,20 @@ if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
 from src.MultiModelImageClassification import MultiModelTrainer
+from src.inference import MaskPostProcessor
 
 class DualModelPipeline:
     """
     Integration Pipeline for Stage 1 (Segmentor) -> Stage 2 (Classifier)
-    This handles predicting masks on an original image, extracting those masks/bboxes as crops,
-    and classifying those crops with expert classifier models.
+    This handles predicting masks on an original image, processing those masks
+    for smoothness, extracting clean crops, and classifying them.
     """
     def __init__(self, segmentor_path, classifier_configs, device=None):
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
         
         print(f"Loading Segmentor: {segmentor_path}")
         self.segmentor = YOLO(segmentor_path)
+        self.postprocessor = MaskPostProcessor(min_area=100) # Using minimum area to cull tiny noisy crops
         self.classifiers = {}
         
         # Setup standard image transforms for PyTorch-based classifiers (EfficientNet, ViT)
@@ -102,7 +104,7 @@ class DualModelPipeline:
             return results, []
 
         boxes = results.boxes.xyxy.cpu().numpy()
-        masks = results.masks.xy
+        polygons = results.masks.xy
         
         final_predictions = []
         classifier_info = self.classifiers[classifier_name]
@@ -111,11 +113,25 @@ class DualModelPipeline:
         idx_to_name = classifier_info['names']
         
         # ─── STAGE 2: CLASSIFIER ────────────────────────────────────
-        for box, mask in zip(boxes, masks):
-            x1, y1, x2, y2 = map(int, box)
-            h, w = image.shape[:2]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w, x2), min(h, y2)
+        for orig_box, orig_poly in zip(boxes, polygons):
+            # 1. Rasterize YOLO polygon to binary mask for post-processing
+            mask_binary = np.zeros(image.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(mask_binary, [np.array(orig_poly, dtype=np.int32)], 1)
+            
+            # 2. Clean mask with PostProcessor (fixes spikes, jagged edges, topologies)
+            clean_polys = self.postprocessor.process(mask_binary)
+            
+            if not clean_polys:
+                continue # Skip if polygon became invalid or too small during cleanup
+                
+            # Assume handling of the primary/largest restored polygon
+            clean_poly = clean_polys[0]
+            
+            # 3. Create fresh bounding box from cleaned polygon
+            x, y, w, h = cv2.boundingRect(clean_poly)
+            img_h, img_w = image.shape[:2]
+            x1, y1 = max(0, x), max(0, y)
+            x2, y2 = min(img_w, x + w), min(img_h, y + h)
             
             crop = original_image[y1:y2, x1:x2]
             if crop.size == 0 or crop.shape[0] == 0 or crop.shape[1] == 0:
@@ -144,8 +160,8 @@ class DualModelPipeline:
                     class_name = idx_to_name.get(pred_class_id, f"Class_{pred_class_id}")
 
             final_predictions.append({
-                'box': box,
-                'mask': mask,
+                'box': [x1, y1, x2, y2],
+                'mask': clean_poly,
                 'class_id': pred_class_id,
                 'class_name': class_name,
                 'conf': conf

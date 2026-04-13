@@ -75,9 +75,12 @@ class MultiModelTrainer:
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                        std=[0.229, 0.224, 0.225])
         
+        # Dynamically fetch the required input size for the chosen network
+        input_sz = self._get_default_input_size(model_name)
+        
         # Base transforms
         train_transform = transforms.Compose([
-            transforms.RandomResizedCrop(224),
+            transforms.RandomResizedCrop(input_sz),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(brightness=0.2, contrast=0.2),
             transforms.ToTensor(),
@@ -85,8 +88,8 @@ class MultiModelTrainer:
         ])
         
         val_transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
+            transforms.Resize(int(input_sz * 256 / 224)),
+            transforms.CenterCrop(input_sz),
             transforms.ToTensor(),
             normalize,
         ])

@@ -8,49 +8,19 @@
 
 This project automates the classification and segmentation of rock cutting samples from drilling operations. It leverages **YOLOv12** for instance segmentation and **CVAT + SAM** for semi-automated annotation workflows.
 
+### Experimental Approaches
+This project supports two core architectural approaches for training and inference:
+1. **Single Model**: A unified YOLO-based instance segmentation model.
+2. **Dual Model**: A decoupled pipeline using a generic YOLO rock Segmentor followed by an expert PyTorch/Timm Classifier.
+
+> **Read the detailed full guide:** [Experimental Approaches: Single vs Dual Model](docs/guides/Dual_Model_Guide.md)
+
 ### Key Features
 - **Instance Segmentation** — Multi-class rock type detection using YOLOv12
-- **Dual Model Pipeline** — Isolated training of Object Boundary Segmentors and fine-grained PyTorch/Timm Expert Classifiers
 - **SAM Integration** — Semi-automated annotation via CVAT + Segment Anything Model
 - **Custom Callbacks** — Early stopping and model checkpoint management
 - **Minority Class Augmentation** — Synthetic data generation for imbalanced datasets
 - **Comprehensive Metrics** — Precision, Recall, F1, IoU evaluation via scikit-learn
-
----
-
-## 🔬 Experimental Modeling Approaches
-
-This project implements and compares two primary architectures for rock classification and segmentation:
-
-### 1. Single Model (Unified YOLO)
-The standard setup where a single YOLOv12 model handles both the localization (segmentation masks) and the classification (rock type) simultaneously.
-- **Dataset:** Standard multi-class YOLO segmentation format (all 6 rock classes).
-- **Notebook:** `notebooks/training/YOLO_Trainer.ipynb`
-- **Output:** End-to-end multi-class bounding box & polygon prediction.
-
-### 2. Dual Model (Two-Stage: Segmentor + Classifier)
-A novel decoupled pipeline separating "finding rocks" from "classifying rock types". By focusing YOLO strictly on boundaries, we can leverage powerful Image Classification architectures (EfficientNetV2, ConvNeXt, DaViT) exclusively on the textured rock crops, leading to potentially higher F1 scores.
-
-#### Data Pipeline & Workflow for Dual Model:
-
-**Step 1: Segmentor Dataset Preparation**
-We convert the multi-class YOLO dataset into a generalized single-class dataset (all rock types are re-labelled as `0: 'rock'`). This focuses the Segmentor entirely on outlining boundaries regardless of texture.
-```bash
-python scripts/data_preprocessing/convert_to_single_class_yolo.py
-```
-> *Output: A clean YOLO dataset where every object is simply localized.*
-
-**Step 2: Classifier Dataset Preparation**
-We extract image *crops* directly from the original multi-class YOLO dataset's bounding boxes. This script creates a standard PyTorch `ImageFolder` structure (e.g., `/train/Limestone/`, `/train/Quartz/`) maintaining strict train/val/test splits to avoid data leakage.
-```bash
-python scripts/data_preprocessing/extract_classifier_crops.py
-```
-> *Output: Thousands of localized rock patches cleanly categorized into folders.*
-
-**Step 3: Training & Integration (The Pipeline)**
-Train the Stage-1 general YOLO segmentor on the Step 1 data, and train the Stage-2 specialized Classifiers on the Step 2 data. 
-- **Notebook:** `notebooks/training/Dual_Model_Trainer.ipynb`
-- **Inference Integration:** This notebook also executes the complete prediction pipeline (`src/inference_dual_model.py`) where YOLO's rough predicted polygons are smoothed via a `MaskPostProcessor`, bounding boxes are recalculated, extracted securely, and fed into the chosen PyTorch Classifier.
 
 ---
 

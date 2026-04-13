@@ -4,6 +4,15 @@ import torch
 from PIL import Image
 import torchvision.transforms as T
 from ultralytics import YOLO
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to allow importing MultiModelTrainer
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
+
+from src.MultiModelImageClassification import MultiModelTrainer
 
 class DualModelPipeline:
     """
@@ -40,17 +49,41 @@ class DualModelPipeline:
                     'type': 'yolo',
                     'names': class_names
                 }
-            else:
-                # PyTorch model (already instantiated in memory or loaded from weights)
+            elif model_type == 'pytorch_timm':
+                # Leverage MultiModelTrainer to instantiate architecture properly
+                arch_name = cfg.get('architecture', 'tf_efficientnetv2_s')
+                num_classes = len(class_names)
+                
+                # Fetch dynamically size and transforms
+                trainer = MultiModelTrainer(model_name=arch_name, num_classes=num_classes, device=self.device, pretrained=False)
+                
+                # Load the state dict
                 if isinstance(path_or_model, str):
-                    model_obj = torch.load(path_or_model).to(self.device).eval()
+                    trainer.model.load_state_dict(torch.load(path_or_model, map_location=self.device))
+                else: 
+                    # If it's a state_dict directly
+                    trainer.model.load_state_dict(path_or_model)
+                
+                model_obj = trainer.model.eval()
+                
+                self.classifiers[name] = {
+                    'obj': model_obj,
+                    'type': 'pytorch_timm',
+                    'names': class_names,
+                    'transform': trainer.transforms['val']
+                }
+            else:
+                # Standard PyTorch model that was saved entirely using torch.save(model, ...)
+                if isinstance(path_or_model, str):
+                    model_obj = torch.load(path_or_model, map_location=self.device).eval()
                 else:
                     model_obj = path_or_model.to(self.device).eval()
                 
                 self.classifiers[name] = {
                     'obj': model_obj,
                     'type': 'pytorch',
-                    'names': class_names
+                    'names': class_names,
+                    'transform': self.transform 
                 }
 
     def predict(self, image, classifier_name):
@@ -95,9 +128,12 @@ class DualModelPipeline:
                 conf = float(cls_res.probs.top1conf)
                 class_name = idx_to_name.get(pred_class_id, cls_res.names.get(pred_class_id, f"Class_{pred_class_id}"))
             else:
-                # Standard PyTorch Classification Inference
+                # Standard PyTorch Classification Inference (Timm or Custom Pytorch)
                 pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-                input_tensor = self.transform(pil_crop).unsqueeze(0).to(self.device)
+                
+                # Fetch specific transform mapping if exists
+                model_transform = classifier_info.get('transform', self.transform)
+                input_tensor = model_transform(pil_crop).unsqueeze(0).to(self.device)
                 
                 with torch.no_grad():
                     outputs = clf_model(input_tensor)

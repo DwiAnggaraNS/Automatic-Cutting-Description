@@ -67,6 +67,7 @@ automatic-cutting-description/
 │   │   ├── convert_yolo_to_coco.py
 │   │   ├── convert_to_single_class_yolo.py  # Stage 1 Dataset Prep
 │   │   ├── extract_classifier_crops.py      # Stage 2 Dataset Prep
+│   │   ├── oversample_minority_crops.py     # Class imbalance handling
 │   │   ├── merge_cvat_datasets.py
 │   │   ├── redistribute_dataset.py
 │   │   ├── remap_coco_categories.py
@@ -136,7 +137,7 @@ scripts/data_analysis/get_statistics_data.py          (class balance check)
         ↓
 scripts/data_analysis/minority_class_extractions.py  (extract minority classes)
         ↓
-scripts/data_analysis/minority_class_generator.py    (synthetic augmentation)
+scripts/data_preprocessing/oversample_minority_crops.py (augment single rock crops for classifier trainset)
         ↓
 notebooks/training/Dual_Model_Trainer.ipynb          (Stage 1 Seg & Stage 2 Cls)
         ↓

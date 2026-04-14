@@ -6,7 +6,7 @@
 
 ## Overview
 
-This project automates the classification and segmentation of rock cutting samples from drilling operations. It leverages **YOLOv12** for instance segmentation and **CVAT + SAM** for semi-automated annotation workflows.
+This project automates the classification and segmentation of rock cutting samples from drilling operations. It leverages **YOLOv26** for instance segmentation and **CVAT + SAM** for semi-automated annotation workflows.
 
 ### Experimental Approaches
 This project supports two core architectural approaches for training and inference:

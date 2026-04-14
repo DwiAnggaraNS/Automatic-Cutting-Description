@@ -9,7 +9,7 @@ This project implements two distinct experimental approaches for the automated c
 
 ## 1. Single Model Approach
 
-In this traditional approach, a single instance segmentation model (YOLOv12-seg) is responsible for both localizing (segmenting boundaries) and classifying the rock types in one pass.
+In this traditional approach, a single instance segmentation model (YOLOv26-seg) is responsible for both localizing (segmenting boundaries) and classifying the rock types in one pass.
 
 - **Workflow:** 
   Directly train a multi-class YOLO model using the multi-class dataset.

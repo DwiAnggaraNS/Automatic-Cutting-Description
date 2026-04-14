@@ -21,17 +21,27 @@ from PIL import Image
 from torchvision import transforms
 from tqdm import tqdm
 
-def get_heavy_augmentation():
+def get_safe_rock_augmentation():
     """
-    Returns a torchvision transform pipeline for heavy augmentation.
+    Returns a domain-specific torchvision transform pipeline for rock classification.
+    
+    Rock Classification Constraints:
+    - Texture is crucial (e.g., grain size in sandstone vs silt). Avoid Blurring.
+    - Color is crucial (e.g., limestone is white, coal is black). Avoid heavy ColorJitter.
+    - Rocks are orientation-invariant. Use flipping and slight rotations safely.
     """
     return transforms.Compose([
-        transforms.RandomRotation(45),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip(), 
-        transforms.ColorJitter(brightness=0.3, contrast=0.3),
-        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
-        transforms.GaussianBlur(kernel_size=3)
+        # Spatial transformations (Safe for rocks as they are orientation invariant)
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.5),
+        transforms.RandomRotation(degrees=15), # Slight rotation to avoid excessive black borders
+        
+        # Geometric transformations (Simulate distance/camera angle)
+        transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05)),
+        
+        # Very conservative lighting adjustments to simulate minor real-world variations
+        # without destroying defining rock colors (keeps coal black and limestone white)
+        transforms.ColorJitter(brightness=0.05, contrast=0.05, saturation=0.0, hue=0.0)
     ])
 
 def balance_train_split(train_dir: Path, target_count: int = None):
@@ -66,8 +76,8 @@ def balance_train_split(train_dir: Path, target_count: int = None):
     else:
         print(f"\nUsing manual target count: {target_count}")
 
-    # Initialize augmentation transforms
-    aug_transform = get_heavy_augmentation()
+    # Initialize domain-safe augmentation transforms
+    aug_transform = get_safe_rock_augmentation()
 
     # Process each minority class
     for cls_dir in class_dirs:
@@ -103,7 +113,7 @@ def balance_train_split(train_dir: Path, target_count: int = None):
             except Exception as e:
                 print(f"Failed to process {src_img_path.name}: {e}")
 
-    print("\n🎉 Oversampling and heavy augmentation complete!")
+    print("\n🎉 Oversampling and domain-safe augmentation complete!")
 
 def main():
     print("==================================================")

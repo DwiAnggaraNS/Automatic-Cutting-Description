@@ -284,10 +284,9 @@ class RockSegmentationPipeline:
                     all_src_boxes.append(box)
                     all_src_masks.append(mask)
                     
-        # For each fused box, find the best matching source mask based on Box IoU
+        # For each WBF fused box, aggregate all source masks that overlap significantly
         for f_box in fused_boxes:
-            best_iou = 0.0
-            best_mask = None
+            matched_masks = []
             
             f_xmin, f_ymin, f_xmax, f_ymax = f_box
             f_area = max(0.0, f_xmax - f_xmin) * max(0.0, f_ymax - f_ymin)
@@ -307,13 +306,19 @@ class RockSegmentationPipeline:
                 if inter_area > 0:
                     s_area = max(0.0, s_xmax - s_xmin) * max(0.0, s_ymax - s_ymin)
                     iou = inter_area / float(f_area + s_area - inter_area + 1e-6)
-                    if iou > best_iou:
-                        best_iou = iou
-                        best_mask = s_mask
+                    # If this source mask significantly overlaps with this WBF group
+                    if iou > self.wbf_iou_thr - 0.15:
+                        matched_masks.append(s_mask)
                         
-            # Union highest confidence mask onto the canvas
-            if best_mask is not None:
-                bin_mask = (best_mask > 0).astype(np.uint8) * 255
+            # Apply Soft TTA Mask Averaging to prevent artifacting from shifting boxes!
+            if matched_masks:
+                # Stack masks and calculate geometric mean to smooth contours
+                stacked = np.stack(matched_masks, axis=0)
+                avg_mask = np.mean(stacked, axis=0)
+                
+                # Threshold at 50% majority voting
+                bin_mask = (avg_mask >= 0.5).astype(np.uint8) * 255
+                
                 if bin_mask.shape[:2] != unified_mask.shape[:2]:
                     bin_mask = cv2.resize(bin_mask, (unified_mask.shape[1], unified_mask.shape[0]), interpolation=cv2.INTER_NEAREST)
                 unified_mask = cv2.bitwise_or(unified_mask, bin_mask)

@@ -4,76 +4,214 @@ from shapely.geometry import Polygon
 from shapely.validation import make_valid
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+from typing import List, Tuple, Dict
 import os
 
-class MaskPostProcessor:
-    """
-    A robust pipeline for post-processing instance segmentation masks.
-    Designed specifically to clean up jagged edges, spikes, and 
-    self-intersecting polygons commonly produced by YOLO upscaling.
-    """
-    def __init__(self, min_area=300, epsilon_ratio=0.008, simplify_tol=2.0):
-        self.min_area = min_area
-        self.epsilon_ratio = epsilon_ratio
-        self.simplify_tol = simplify_tol
+try:
+    from ensemble_boxes import weighted_boxes_fusion
+except ImportError:
+    weighted_boxes_fusion = None
+    print("Warning: ensemble_boxes not installed. Required for WBF in RockSegmentationPipeline. Install with 'pip install ensemble-boxes'")
 
-    def process(self, mask_binary):
+class RockSegmentationPipeline:
+    """
+    A comprehensive pipeline for highly overlapping rock image segmentation, 
+    integrating Test-Time Augmentation (TTA) Box Fusion and Solidity-based 
+    Watershed Post-processing.
+    """
+
+    def __init__(self, wbf_iou_thr: float = 0.55, solidity_thr: float = 0.85, min_area: int = 300):
         """
-        Process a single binary mask into clean polygon coordinates.
+        Initializes the pipeline with specific thresholds for fusion and segmentation.
+        
+        Args:
+            wbf_iou_thr (float): Intersection over Union threshold for WBF.
+            solidity_thr (float): Threshold to classify a contour as a valid rock seed.
+            min_area (int): Minimum pixel area of a rock contour to be retained.
+        """
+        self.wbf_iou_thr = wbf_iou_thr
+        self.solidity_thr = solidity_thr
+        self.min_area = min_area
+
+    def process(self, mask_binary: np.ndarray) -> List[np.ndarray]:
+        """
+        Backward compatible processing method. Applies the watershed post-processing
+        to a single binary mask and extracts cleaned polygon coordinates.
+        
         Args:
             mask_binary: Boolean or uint8 numpy array of shape (H, W)
+            
         Returns:
             List of cleaned polygon coordinates (np.int32 arrays)
         """
-        mask = mask_binary.astype(np.uint8)
+        separated_masks = self.apply_solidity_based_watershed(mask_binary)
+        clean_polygons = []
         
-        # 1. Morphological Operations: Close (fill small holes) -> Open (remove external spikes)
+        for mask_instance in separated_masks:
+            contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                if cv2.contourArea(cnt) < self.min_area:
+                    continue
+                # Ensure the format matches original output: arrays of shape (N, 2)
+                pts = cnt.reshape(-1, 2)
+                if len(pts) >= 3:
+                    clean_polygons.append(pts)
+                    
+        return clean_polygons
+
+    def apply_weighted_boxes_fusion(
+        self, 
+        boxes_list: List[List[List[float]]], 
+        scores_list: List[List[float]], 
+        labels_list: List[List[int]], 
+        weights: List[float] = None
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Fuses overlapping bounding boxes from multiple TTA predictions.
+        
+        Reference: 
+        Solovyev, R., Wang, W., & Gabruseva, T. (2020). "Weighted boxes fusion: 
+        Ensembling boxes from different object detection models." 
+        """
+        if weighted_boxes_fusion is None:
+            raise ImportError("ensemble_boxes is required to run WBF.")
+            
+        fused_boxes, fused_scores, fused_labels = weighted_boxes_fusion(
+            boxes_list, 
+            scores_list, 
+            labels_list, 
+            weights=weights, 
+            iou_thr=self.wbf_iou_thr, 
+            skip_box_thr=0.0
+        )
+        return fused_boxes, fused_scores, fused_labels
+
+    def apply_solidity_based_watershed(self, binary_mask: np.ndarray) -> List[np.ndarray]:
+        """
+        Applies a Marker-Based Watershed algorithm using contour solidity to 
+        prevent over-segmentation of complex, adhered blasted rock images.
+        
+        Reference:
+        Guo, Q., Wang, Y., Yang, S., & Xiang, Z. (2022). "A method of blasted rock 
+        image segmentation based on improved watershed algorithm." Scientific Reports.
+
+        Algorithm Steps:
+        1. Morphological optimization to smooth edges and remove noise.
+        2. Distance transformation of the binary mask.
+        3. Multiple gray thresholding to find contours.
+        4. Calculate Solidity (Area / Convex Hull Area).
+        5. Mark contours with solidity > threshold as definitive seed points.
+        6. Apply cv2.watershed to segment adhered rocks.
+        
+        Args:
+            binary_mask: A 2D numpy array (0 and 255) representing the fused rock mask.
+            
+        Returns:
+            List of 2D numpy arrays, where each array is a single isolated rock instance.        
+        """
+        # Ensure mask is uint8
+        mask = (binary_mask > 0).astype(np.uint8) * 255
+        
+        #1. Morphological Optimization
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        #2. Distance Transform
+        dist_transform = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+        cv2.normalize(dist_transform, dist_transform, 0, 255.0, cv2.NORM_MINMAX)
+        dist_transform_8u = dist_transform.astype(np.uint8)
+
+        #3. Multiple Gray Thresholds
+        # We iterate through different thresholds to avoid missing smaller seeds
+        # or over-segmenting larger ones (Guo et al., 2022).
+        markers_bg = np.zeros_like(mask, dtype=np.int32)
+        seed_id = 1
         
-        # 2. Gaussian Blur & Rethresholding to smooth hard edges
-        mask_f = cv2.GaussianBlur(mask.astype(np.float32), (7, 7), 0)
-        mask = (mask_f > 0.4).astype(np.uint8)
-        
-        # 3. Contour Extraction
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        clean_polygons = []
-        for cnt in contours:
-            if cv2.contourArea(cnt) < self.min_area:
-                continue
+        thresholds = [64, 128, 192]
+        for thresh in thresholds:
+            _, thresholded_dist = cv2.threshold(dist_transform_8u, thresh, 255, cv2.THRESH_BINARY)
+            contours, _ = cv2.findContours(thresholded_dist, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            # 4. Douglas-Peucker Simplification
-            eps = self.epsilon_ratio * cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, eps, True)
-            
-            pts = approx.reshape(-1, 2)
-            if len(pts) < 3:
-                continue
-            
-            # 5. Shapely Geometry: Fix intersections and simplify topology safely
-            try:
-                poly = Polygon(pts)
-                poly = make_valid(poly)
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area < 10:
+                    continue
+                    
+                convex_hull = cv2.convexHull(contour)
+                hull_area = cv2.contourArea(convex_hull)
                 
-                # Handle multipolygons strictly created by make_valid tearing parts
-                if poly.geom_type == 'MultiPolygon':
-                    # Keep the largest part
-                    poly = max(poly.geoms, key=lambda a: a.area)
-                
-                poly = poly.simplify(self.simplify_tol, preserve_topology=True)
-                
-                if poly.is_empty or poly.area < self.min_area:
+                if hull_area == 0:
                     continue
                 
-                coords = np.array(poly.exterior.coords, dtype=np.int32)
-                clean_polygons.append(coords)
-            except Exception:
-                # Fallback to the raw approxPolyDP if Shapely fails
-                clean_polygons.append(pts)
+                # 4. Calculate Solidity            
+                solidity = float(area) / hull_area
+
+                # 5. Mark valid seed points
+                if solidity >= self.solidity_thr:
+                    cv2.drawContours(markers_bg, [contour], -1, (seed_id), thickness=cv2.FILLED)
+                    seed_id += 1
+
+        sure_bg = cv2.dilate(mask, kernel, iterations=3)
+        unknown = cv2.subtract(sure_bg, (markers_bg > 0).astype(np.uint8) * 255)
+        
+        markers = markers_bg + 1
+        markers[unknown == 255] = 0
+        
+        # 6. Apply Watershed (Requires 3-channel image)
+        img_color = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        markers = cv2.watershed(img_color, markers)
+        
+        # 7. Extract Individual Instances
+        separated_instances = []
+        for marker_val in range(2, markers.max() + 1):
+            obj_mask = np.zeros_like(mask)
+            obj_mask[markers == marker_val] = 255
+            
+            if cv2.countNonZero(obj_mask) > 0:
+                separated_instances.append(obj_mask)
                 
-        return clean_polygons
+        # Fallback if watershed removed everything
+        if not separated_instances and cv2.countNonZero(mask) > 0:
+            separated_instances.append(mask)
+                
+        return separated_instances
+
+    def run_pipeline(self, tta_inferences: List[Dict]) -> List[np.ndarray]:
+        """
+        Executes the entire post-processing workflow precisely in order:
+        1. Receive TTA inferences.
+        2. Apply WBF to fuse bounding boxes.
+        3. (Mocked Step) Reconstruct a single unified binary mask based on fused boxes.
+        4. Apply Solidity-Based Watershed to the unified mask.
+        
+        Args:
+            tta_inferences: A list of dictionaries, where each dict represents 
+                            one TTA pass containing 'boxes', 'scores', 'labels', 
+                            and 'masks'.
+                            
+        Returns:
+            List of final processed binary masks representing separated rocks.
+        """
+        boxes_list = [infer['boxes'] for infer in tta_inferences]
+        scores_list = [infer['scores'] for infer in tta_inferences]
+        labels_list = [infer['labels'] for infer in tta_inferences]
+        
+        fused_boxes, fused_scores, fused_labels = self.apply_weighted_boxes_fusion(
+            boxes_list, scores_list, labels_list
+        )
+        
+        unified_binary_mask = self._reconstruct_unified_mask(fused_boxes, tta_inferences)
+        final_separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
+        
+        return final_separated_masks
+
+    def _reconstruct_unified_mask(self, fused_boxes: np.ndarray, tta_inferences: List[Dict]) -> np.ndarray:
+        """
+        Mock helper to reconstruct a unified 2D binary mask.
+        """
+        dummy_shape = tta_inferences[0].get('masks', np.zeros((640, 640))).shape
+        return np.zeros(dummy_shape, dtype=np.uint8)
 
 class RockVisualizer:
     """

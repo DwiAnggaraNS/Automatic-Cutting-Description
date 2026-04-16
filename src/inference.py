@@ -167,3 +167,43 @@ class RockVisualizer:
         
         plt.tight_layout()
         return fig
+
+    def plot_comparison(self, original_bgr, proc_hollow, proc_solid, title_suffix=""):
+        """
+        Builds a concise 1x3 matplotlib figure showing Original, Processed Hollow, 
+        and Processed Solid masks side-by-side. Designed primarily for SAHI inference.
+        
+        Args:
+            original_bgr (np.ndarray): Original image array in BGR format.
+            proc_hollow (np.ndarray): Processed image with hollow CVAT-style contours.
+            proc_solid (np.ndarray): Processed mask-only solid polygons.
+            title_suffix (str): Additional text appended to the subplot titles.
+            
+        Returns:
+            matplotlib.figure.Figure: The complete figure to be displayed or saved.
+        """
+        original_rgb = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2RGB)
+        
+        fig, axes = plt.subplots(1, 3, figsize=(24, 8))
+        
+        axes[0].imshow(original_rgb)
+        axes[0].set_title("Original Image", fontsize=16)
+        axes[0].axis('off')
+        
+        axes[1].imshow(proc_hollow)
+        axes[1].set_title(f"Processed (Hollow) {title_suffix}", fontsize=16)
+        axes[1].axis('off')
+        
+        axes[2].imshow(proc_solid)
+        axes[2].set_title(f"Processed (Solid) {title_suffix}", fontsize=16)
+        axes[2].axis('off')
+        
+        # Consistent legend
+        legend_elements = [
+            Patch(facecolor=[c/255 for c in color], edgecolor='k', label=self.class_names.get(int(class_id), f"ID {class_id}")) 
+            for class_id, color in self.class_colors.items()
+        ]
+        axes[2].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.25, 1))
+        
+        plt.tight_layout()
+        return fig

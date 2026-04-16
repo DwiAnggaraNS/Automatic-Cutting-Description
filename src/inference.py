@@ -177,13 +177,14 @@ class RockSegmentationPipeline:
                 
         return separated_instances
 
-    def run_pipeline(self, tta_inferences: List[Dict]) -> List[np.ndarray]:
+    def run_pipeline(self, tta_inferences: List[Dict]) -> Dict[int, List[np.ndarray]]:
         """
         Executes the entire post-processing workflow precisely in order:
         1. Receive TTA inferences.
         2. Apply WBF to fuse bounding boxes.
         3. Reconstruct a single unified binary mask based on fused boxes.
         4. Apply Solidity-Based Watershed to the unified mask.
+        5. Map each separated contour back to the best matched class label.
         
         Args:
             tta_inferences: A list of dictionaries, where each dict represents 
@@ -191,10 +192,10 @@ class RockSegmentationPipeline:
                             and 'masks'.
                             
         Returns:
-            List of final processed polygon coordinates arrays representing separated rocks.
+            A dictionary mapping class IDs to lists of polygon coordinates arrays.
         """
         if not tta_inferences:
-            return []
+            return {}
             
         boxes_list = [infer['boxes'] for infer in tta_inferences]
         scores_list = [infer['scores'] for infer in tta_inferences]
@@ -207,8 +208,19 @@ class RockSegmentationPipeline:
         unified_binary_mask = self._reconstruct_unified_mask(fused_boxes, tta_inferences)
         separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
         
-        # Convert separated binary masks into clean polygons
-        clean_polygons = []
+        h, w = unified_binary_mask.shape[:2]
+        
+        # Convert normalized fused boxes to pixel coordinates for intersection matching
+        fused_boxes_px = []
+        for box in fused_boxes:
+            fused_boxes_px.append([
+                box[0] * w, box[1] * h,
+                box[2] * w, box[3] * h
+            ])
+            
+        polygons_by_class = {}
+        
+        # Convert separated binary masks into clean polygons mapped to class labels
         for mask_instance in separated_masks:
             contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for cnt in contours:
@@ -216,9 +228,32 @@ class RockSegmentationPipeline:
                     continue
                 pts = cnt.reshape(-1, 2)
                 if len(pts) >= 3:
-                    clean_polygons.append(pts)
+                    # Map polygon to the corresponding WBF fused box class
+                    x, y, bw, bh = cv2.boundingRect(pts)
+                    poly_box = [x, y, x + bw, y + bh]
                     
-        return clean_polygons
+                    best_inter = 0
+                    best_class = int(fused_labels[0]) if len(fused_labels) > 0 else 0
+                    
+                    for fbox, flabel in zip(fused_boxes_px, fused_labels):
+                        ix_min = max(poly_box[0], fbox[0])
+                        iy_min = max(poly_box[1], fbox[1])
+                        ix_max = min(poly_box[2], fbox[2])
+                        iy_max = min(poly_box[3], fbox[3])
+                        
+                        iw = max(0, ix_max - ix_min)
+                        ih = max(0, iy_max - iy_min)
+                        inter_area = iw * ih
+                        
+                        if inter_area > best_inter:
+                            best_inter = inter_area
+                            best_class = int(flabel)
+                            
+                    if best_class not in polygons_by_class:
+                        polygons_by_class[best_class] = []
+                    polygons_by_class[best_class].append(pts)
+                    
+        return polygons_by_class
 
     def _reconstruct_unified_mask(self, fused_boxes: np.ndarray, tta_inferences: List[Dict]) -> np.ndarray:
         """

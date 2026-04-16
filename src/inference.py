@@ -182,7 +182,7 @@ class RockSegmentationPipeline:
         Executes the entire post-processing workflow precisely in order:
         1. Receive TTA inferences.
         2. Apply WBF to fuse bounding boxes.
-        3. (Mocked Step) Reconstruct a single unified binary mask based on fused boxes.
+        3. Reconstruct a single unified binary mask based on fused boxes.
         4. Apply Solidity-Based Watershed to the unified mask.
         
         Args:
@@ -191,8 +191,11 @@ class RockSegmentationPipeline:
                             and 'masks'.
                             
         Returns:
-            List of final processed binary masks representing separated rocks.
+            List of final processed polygon coordinates arrays representing separated rocks.
         """
+        if not tta_inferences:
+            return []
+            
         boxes_list = [infer['boxes'] for infer in tta_inferences]
         scores_list = [infer['scores'] for infer in tta_inferences]
         labels_list = [infer['labels'] for infer in tta_inferences]
@@ -202,16 +205,85 @@ class RockSegmentationPipeline:
         )
         
         unified_binary_mask = self._reconstruct_unified_mask(fused_boxes, tta_inferences)
-        final_separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
+        separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
         
-        return final_separated_masks
+        # Convert separated binary masks into clean polygons
+        clean_polygons = []
+        for mask_instance in separated_masks:
+            contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                if cv2.contourArea(cnt) < self.min_area:
+                    continue
+                pts = cnt.reshape(-1, 2)
+                if len(pts) >= 3:
+                    clean_polygons.append(pts)
+                    
+        return clean_polygons
 
     def _reconstruct_unified_mask(self, fused_boxes: np.ndarray, tta_inferences: List[Dict]) -> np.ndarray:
         """
-        Mock helper to reconstruct a unified 2D binary mask.
+        Reconstructs a unified 2D binary mask by mapping WBF fused boxes back 
+        to the best corresponding TTA masks based on IoU.
         """
-        dummy_shape = tta_inferences[0].get('masks', np.zeros((640, 640))).shape
-        return np.zeros(dummy_shape, dtype=np.uint8)
+        if not tta_inferences or len(tta_inferences) == 0:
+            return np.zeros((640, 640), dtype=np.uint8)
+            
+        # Use first available mask to determine image dimensions
+        dummy_shape = (640, 640)
+        for infer in tta_inferences:
+            if 'masks' in infer and len(infer['masks']) > 0:
+                dummy_shape = infer['masks'][0].shape[:2]
+                break
+                
+        unified_mask = np.zeros(dummy_shape, dtype=np.uint8)
+        
+        if len(fused_boxes) == 0:
+            return unified_mask
+            
+        # Compile all source boxes & masks across TTA passed
+        all_src_boxes = []
+        all_src_masks = []
+        for infer in tta_inferences:
+            if 'boxes' in infer and 'masks' in infer:
+                for box, mask in zip(infer['boxes'], infer['masks']):
+                    all_src_boxes.append(box)
+                    all_src_masks.append(mask)
+                    
+        # For each fused box, find the best matching source mask based on Box IoU
+        for f_box in fused_boxes:
+            best_iou = 0.0
+            best_mask = None
+            
+            f_xmin, f_ymin, f_xmax, f_ymax = f_box
+            f_area = max(0.0, f_xmax - f_xmin) * max(0.0, f_ymax - f_ymin)
+            
+            for s_box, s_mask in zip(all_src_boxes, all_src_masks):
+                s_xmin, s_ymin, s_xmax, s_ymax = s_box
+                
+                inter_xmin = max(f_xmin, s_xmin)
+                inter_ymin = max(f_ymin, s_ymin)
+                inter_xmax = min(f_xmax, s_xmax)
+                inter_ymax = min(f_ymax, s_ymax)
+                
+                inter_w = max(0.0, inter_xmax - inter_xmin)
+                inter_h = max(0.0, inter_ymax - inter_ymin)
+                inter_area = inter_w * inter_h
+                
+                if inter_area > 0:
+                    s_area = max(0.0, s_xmax - s_xmin) * max(0.0, s_ymax - s_ymin)
+                    iou = inter_area / float(f_area + s_area - inter_area + 1e-6)
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_mask = s_mask
+                        
+            # Union highest confidence mask onto the canvas
+            if best_mask is not None:
+                bin_mask = (best_mask > 0).astype(np.uint8) * 255
+                if bin_mask.shape[:2] != unified_mask.shape[:2]:
+                    bin_mask = cv2.resize(bin_mask, (unified_mask.shape[1], unified_mask.shape[0]), interpolation=cv2.INTER_NEAREST)
+                unified_mask = cv2.bitwise_or(unified_mask, bin_mask)
+                
+        return unified_mask
 
 class RockVisualizer:
     """

@@ -16,20 +16,21 @@ except ImportError:
 class RockSegmentationPipeline:
     """
     A comprehensive pipeline for highly overlapping rock image segmentation, 
-    integrating Test-Time Augmentation (TTA) Box Fusion and Solidity-based 
-    Watershed Post-processing.
+    integrating Solidity-based Watershed Post-processing to refine standard inferences without TTA or WBF.
     """
 
-    def __init__(self, solidity_thr: float = 0.85, min_area: int = 300):
+    def __init__(self, solidity_thr: float = 0.85, min_area: int = 300, min_area_after_watershed: int = 150):
         """
-        Initializes the pipeline with specific thresholds for segmentation.
+        Initializes the pipeline with specific thresholds for smoothing and segmentation.
         
         Args:
             solidity_thr (float): Threshold to classify a contour as a valid rock seed.
-            min_area (int): Minimum pixel area of a rock contour to be retained.
+            min_area (int): Minimum pixel area of a rock contour to be initially processed.
+            min_area_after_watershed (int): Minimum pixel area of a rock contour to be retained after watershed split.
         """
         self.solidity_thr = solidity_thr
         self.min_area = min_area
+        self.min_area_after_watershed = min_area_after_watershed
 
     def process(self, mask_binary: np.ndarray) -> List[np.ndarray]:
         """
@@ -48,7 +49,7 @@ class RockSegmentationPipeline:
         for mask_instance in separated_masks:
             contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for cnt in contours:
-                if cv2.contourArea(cnt) < self.min_area:
+                if cv2.contourArea(cnt) < self.min_area_after_watershed:
                     continue
                 # Ensure the format matches original output: arrays of shape (N, 2)
                 pts = cnt.reshape(-1, 2)
@@ -148,75 +149,59 @@ class RockSegmentationPipeline:
                 
         return separated_instances
 
-    def run_pipeline(self, inference: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def run_pipeline(self, model_results: Any) -> List[Dict[str, Any]]:
         """
-        Executes the post-processing workflow utilizing Solidity-Based Watershed directly on raw inferences.
-        TTA and Box Fusion have been entirely removed to strictly preserve natural CNN polygon shapes.
-        
-        Algorithm Steps:
-        1. Receive a single YOLO inference pass.
-        2. Create a master binary mask from the raw source masks.
-        3. Apply Solidity-Based Watershed to correctly separate overlapping and adhered rocks.
-        4. Map each split polygon back to its original source bounding box to inherit class and confidence.
+        Executes the morphological post-processing workflow on standard YOLO predictions.
+        (Refactored to remove TTA and WBF due to geometric distortions).
         
         Args:
-            inference: Dict representing a single pass ('boxes', 'scores', 'labels', 'masks').
+            model_results: Ultralytics YOLO Results object containing native predictions.
                             
         Returns:
             List of dictionaries containing {"polygon": ndarray, "class_id": int, "score": float}.
         """
-        if not inference or 'masks' not in inference or len(inference['masks']) == 0:
-            return []
-            
-        boxes = inference['boxes']
-        scores = inference['scores']
-        labels = inference['labels']
-        masks = inference['masks']
-        
-        h, w = masks[0].shape[:2]
-        
-        # 1. Master Mask Construction from single pass (Zero geometric warping)
-        unified_binary_mask = np.zeros((h, w), dtype=np.uint8)
-        for mask in masks:
-            unified_binary_mask = cv2.bitwise_or(unified_binary_mask, mask)
-            
-        # 2. Solidity-Based Watershed
-        separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
-        
-        # 3. Polygon extraction and metadata inheritance via pure Intersection Geometry
         final_predictions = []
-        for mask_instance in separated_masks:
-            contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                if cv2.contourArea(cnt) < self.min_area:
-                    continue
-                pts = cnt.reshape(-1, 2)
-                if len(pts) >= 3:
-                    poly_box = cv2.boundingRect(pts)
-                    px, py, pw, ph = poly_box
-                    pbox_arr = [px, py, px + pw, py + ph]
+        if not model_results or model_results.masks is None:
+            return final_predictions
+            
+        # 1. Iterate over every native inference prediction natively
+        h, w = model_results.orig_shape
+        polygons = model_results.masks.xy
+        classes = model_results.boxes.cls.cpu().numpy()
+        scores = model_results.boxes.conf.cpu().numpy()
+        
+        for poly, cls_id, base_score in zip(polygons, classes, scores):
+            if len(poly) < 3:
+                continue
+                
+            # Create a localized blank map for this specific instance to check solidity & morphological features
+            isolated_mask = np.zeros((h, w), dtype=np.uint8)
+            poly_int = poly.astype(np.int32)
+            
+            # Draw as filled polygon
+            cv2.fillPoly(isolated_mask, [poly_int], 255)
+            
+            # Initial area check
+            if cv2.countNonZero(isolated_mask) < self.min_area:
+                continue
+                
+            # Apply solidity-based watershed on this isolated prediction just in case multiple rocks are fused natively by the single pass
+            separated_masks = self.apply_solidity_based_watershed(isolated_mask)
+            
+            for split_mask in separated_masks:
+                contours, _ = cv2.findContours(split_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                for cnt in contours:
+                    if cv2.contourArea(cnt) < self.min_area_after_watershed:
+                        continue
                     
-                    best_inter = 0
-                    best_class = labels[0]
-                    best_score = scores[0]
-                    
-                    for s_box, s_label, s_score in zip(boxes, labels, scores):
-                        fbox = [s_box[0]*w, s_box[1]*h, s_box[2]*w, s_box[3]*h]
-                        iw = max(0, min(pbox_arr[2], fbox[2]) - max(pbox_arr[0], fbox[0]))
-                        ih = max(0, min(pbox_arr[3], fbox[3]) - max(pbox_arr[1], fbox[1]))
-                        inter_area = iw * ih
+                    pts = cnt.reshape(-1, 2)
+                    if len(pts) >= 3:
+                        final_predictions.append({
+                            "polygon": pts,
+                            "class_id": int(cls_id),
+                            "score": float(base_score)
+                        })
                         
-                        if inter_area > best_inter:
-                            best_inter = inter_area
-                            best_class = s_label
-                            best_score = s_score
-                            
-                    final_predictions.append({
-                        "polygon": pts,
-                        "class_id": int(best_class),
-                        "score": float(best_score)
-                    })
-                    
         return final_predictions
 
 class RockVisualizer:

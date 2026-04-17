@@ -20,16 +20,14 @@ class RockSegmentationPipeline:
     Watershed Post-processing.
     """
 
-    def __init__(self, wbf_iou_thr: float = 0.55, solidity_thr: float = 0.85, min_area: int = 300):
+    def __init__(self, solidity_thr: float = 0.85, min_area: int = 300):
         """
-        Initializes the pipeline with specific thresholds for fusion and segmentation.
+        Initializes the pipeline with specific thresholds for segmentation.
         
         Args:
-            wbf_iou_thr (float): Intersection over Union threshold for WBF.
             solidity_thr (float): Threshold to classify a contour as a valid rock seed.
             min_area (int): Minimum pixel area of a rock contour to be retained.
         """
-        self.wbf_iou_thr = wbf_iou_thr
         self.solidity_thr = solidity_thr
         self.min_area = min_area
 
@@ -58,33 +56,6 @@ class RockSegmentationPipeline:
                     clean_polygons.append(pts)
                     
         return clean_polygons
-
-    def apply_weighted_boxes_fusion(
-        self, 
-        boxes_list: List[List[List[float]]], 
-        scores_list: List[List[float]], 
-        labels_list: List[List[int]], 
-        weights: List[float] = None
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Fuses overlapping bounding boxes from multiple TTA predictions.
-        
-        Reference: 
-        Solovyev, R., Wang, W., & Gabruseva, T. (2020). "Weighted boxes fusion: 
-        Ensembling boxes from different object detection models." 
-        """
-        if weighted_boxes_fusion is None:
-            raise ImportError("ensemble_boxes is required to run WBF.")
-            
-        fused_boxes, fused_scores, fused_labels = weighted_boxes_fusion(
-            boxes_list, 
-            scores_list, 
-            labels_list, 
-            weights=weights, 
-            iou_thr=self.wbf_iou_thr, 
-            skip_box_thr=0.0
-        )
-        return fused_boxes, fused_scores, fused_labels
 
     def apply_solidity_based_watershed(self, binary_mask: np.ndarray) -> List[np.ndarray]:
         """
@@ -177,96 +148,42 @@ class RockSegmentationPipeline:
                 
         return separated_instances
 
-    def run_pipeline(self, tta_inferences: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def run_pipeline(self, inference: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Executes the post-processing workflow utilizing WBF strictly as an advanced NMS, 
-        preserving true CNN pixel geometry to prevent coordinate stretching and affine artifacts.
+        Executes the post-processing workflow utilizing Solidity-Based Watershed directly on raw inferences.
+        TTA and Box Fusion have been entirely removed to strictly preserve natural CNN polygon shapes.
         
         Algorithm Steps:
-        1. Receive TTA inferences and apply Weighted Boxes Fusion (WBF) purely for object deduplication.
-        2. Prevent geometric misalignment by mapping each fused box back to its single highest-confidence 
-           source prediction. Extract the untouched original bounding box, mask, and score.
-        3. Create a master binary mask from these pristine source masks and apply Solidity-Based Watershed.
-        4. Map each split polygon back to its original source bounding box to inherit exact properties.
+        1. Receive a single YOLO inference pass.
+        2. Create a master binary mask from the raw source masks.
+        3. Apply Solidity-Based Watershed to correctly separate overlapping and adhered rocks.
+        4. Map each split polygon back to its original source bounding box to inherit class and confidence.
         
         Args:
-            tta_inferences: List of dicts representing TTA passes ('boxes', 'scores', 'labels', 'masks').
+            inference: Dict representing a single pass ('boxes', 'scores', 'labels', 'masks').
                             
         Returns:
             List of dictionaries containing {"polygon": ndarray, "class_id": int, "score": float}.
         """
-        if not tta_inferences:
+        if not inference or 'masks' not in inference or len(inference['masks']) == 0:
             return []
             
-        boxes_list = [infer['boxes'] for infer in tta_inferences]
-        scores_list = [infer['scores'] for infer in tta_inferences]
-        labels_list = [infer['labels'] for infer in tta_inferences]
+        boxes = inference['boxes']
+        scores = inference['scores']
+        labels = inference['labels']
+        masks = inference['masks']
         
-        # 1. WBF as Advanced NMS
-        fused_boxes, fused_scores, fused_labels = self.apply_weighted_boxes_fusion(
-            boxes_list, scores_list, labels_list
-        )
+        h, w = masks[0].shape[:2]
         
-        if len(fused_boxes) == 0:
-            return []
-            
-        # Compile all source predictions into a flat registry
-        all_sources = []
-        for infer in tta_inferences:
-            if 'boxes' in infer and 'masks' in infer:
-                for box, mask, score, label in zip(infer['boxes'], infer['masks'], infer['scores'], infer['labels']):
-                    all_sources.append({
-                        'box': box,
-                        'mask': mask,
-                        'score': float(score),
-                        'label': int(label)
-                    })
-                    
-        if not all_sources:
-            return []
-            
-        h, w = all_sources[0]['mask'].shape[:2]
-        
-        # 2. Source Selection (Preserving original pristine geometry)
-        selected_sources = []
-        for f_box in fused_boxes:
-            f_area = max(0.0, f_box[2] - f_box[0]) * max(0.0, f_box[3] - f_box[1])
-            best_source = None
-            best_score = -1.0
-            
-            for src in all_sources:
-                s_box = src['box']
-                inter_w = max(0.0, min(f_box[2], s_box[2]) - max(f_box[0], s_box[0]))
-                inter_h = max(0.0, min(f_box[3], s_box[3]) - max(f_box[1], s_box[1]))
-                inter_area = inter_w * inter_h
-                
-                if inter_area > 0:
-                    s_area = max(0.0, s_box[2] - s_box[0]) * max(0.0, s_box[3] - s_box[1])
-                    iou = inter_area / float(f_area + s_area - inter_area + 1e-6)
-                    
-                    # Match source to fused object via IoU, extracting the highest confidence native geometry
-                    if iou > self.wbf_iou_thr - 0.15 and src['score'] > best_score:
-                        best_score = src['score']
-                        best_source = src
-                        
-            if best_source is not None:
-                # Convert normalized original box coordinates to absolute pixel values
-                bx = best_source['box']
-                best_source['box_px'] = [bx[0] * w, bx[1] * h, bx[2] * w, bx[3] * h]
-                selected_sources.append(best_source)
-                
-        # 3. Construct Master Mask safely from deduplicated original sources
+        # 1. Master Mask Construction from single pass (Zero geometric warping)
         unified_binary_mask = np.zeros((h, w), dtype=np.uint8)
-        for src in selected_sources:
-            mask = src['mask']
-            if mask.shape[:2] != (h, w):
-                mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        for mask in masks:
             unified_binary_mask = cv2.bitwise_or(unified_binary_mask, mask)
             
-        # 4. Solidiity-Based Watershed
+        # 2. Solidity-Based Watershed
         separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
         
-        # 5. Extraction & Property Inheritance mapped to original untouched boxes
+        # 3. Polygon extraction and metadata inheritance via pure Intersection Geometry
         final_predictions = []
         for mask_instance in separated_masks:
             contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -280,24 +197,23 @@ class RockSegmentationPipeline:
                     pbox_arr = [px, py, px + pw, py + ph]
                     
                     best_inter = 0
-                    best_class = selected_sources[0]['label'] if selected_sources else 0
-                    best_score = selected_sources[0]['score'] if selected_sources else 0.50
+                    best_class = labels[0]
+                    best_score = scores[0]
                     
-                    for src in selected_sources:
-                        fbox = src['box_px']
+                    for s_box, s_label, s_score in zip(boxes, labels, scores):
+                        fbox = [s_box[0]*w, s_box[1]*h, s_box[2]*w, s_box[3]*h]
                         iw = max(0, min(pbox_arr[2], fbox[2]) - max(pbox_arr[0], fbox[0]))
                         ih = max(0, min(pbox_arr[3], fbox[3]) - max(pbox_arr[1], fbox[1]))
                         inter_area = iw * ih
                         
                         if inter_area > best_inter:
                             best_inter = inter_area
-                            best_class = src['label']
-                            # Maintain the authentic TTA native neural network confidence score
-                            best_score = src['score']
+                            best_class = s_label
+                            best_score = s_score
                             
                     final_predictions.append({
                         "polygon": pts,
-                        "class_id": best_class,
+                        "class_id": int(best_class),
                         "score": float(best_score)
                     })
                     

@@ -60,14 +60,19 @@ class RockSegmentationPipeline:
 
     def apply_solidity_based_watershed(self, binary_mask: np.ndarray) -> List[np.ndarray]:
         """
-        Applies a Marker-Based Watershed algorithm using distance transforms to safely
-        split under-segmented blobs without destructing the precise outer boundaries.
+        Applies Marker-Based Watershed algorithm using distance transforms and 
+        contour solidity validation to safely split under-segmented blobs.
+        
+        Reference:
+        Guo, Q., Wang, Y., Yang, S., & Xiang, Z. (2022). "A method of blasted rock 
+        image segmentation based on improved watershed algorithm." Scientific Reports.
 
         Algorithm Steps:
-        1. Maintain original precise CNN prediction mask.
+        1. Morphologically optimize the binary mask to smooth boundaries.
         2. Apply distance transform for localized maxima identification.
         3. Threshold at varying depths to determine logical seed points for discrete rocks.
-        4. Apply cv2.watershed specifically restricted to the actual blob footprint.
+        4. Validate each seed point using contour solidity (must be >= threshold).
+        5. Apply cv2.watershed specifically restricted to the actual blob footprint.
         
         Args:
             binary_mask: A 2D numpy array (0 and 255) representing the fused rock mask.
@@ -77,16 +82,22 @@ class RockSegmentationPipeline:
         """
         original_mask = (binary_mask > 0).astype(np.uint8) * 255
         
-        # 1. Distance Transform
-        dist_transform = cv2.distanceTransform(original_mask, cv2.DIST_L2, 3)
+        # 1. Morphological Optimization
+        # Smoothes the mask prior to processing so the distance transform doesn't produce jagged local maxima
+        kernel = np.ones((5, 5), np.uint8)
+        mask_opt = cv2.morphologyEx(original_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        mask_opt = cv2.morphologyEx(mask_opt, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        # 2. Distance Transform
+        dist_transform = cv2.distanceTransform(mask_opt, cv2.DIST_L2, 3)
         cv2.normalize(dist_transform, dist_transform, 0, 255.0, cv2.NORM_MINMAX)
         dist_transform_8u = dist_transform.astype(np.uint8)
 
-        # 2. Dynamic Thresholding for Seeds
+        # 3. Dynamic Thresholding for Seeds
         markers_bg = np.zeros_like(original_mask, dtype=np.int32)
         seed_id = 1
         
-        # Evaluate from deepest core to shallower core 
+        # Evaluate from deepest core to shallower core
         thresholds = [192, 128, 64]
         for thresh in thresholds:
             _, thresholded_dist = cv2.threshold(dist_transform_8u, thresh, 255, cv2.THRESH_BINARY)
@@ -97,30 +108,39 @@ class RockSegmentationPipeline:
                 if area < 10:
                     continue
                     
-                seed_mask = np.zeros_like(original_mask)
-                cv2.drawContours(seed_mask, [contour], -1, 255, thickness=cv2.FILLED)
+                # 4. Solidity check on the Seed Point
+                convex_hull = cv2.convexHull(contour)
+                hull_area = cv2.contourArea(convex_hull)
                 
-                # Register seed strictly if the location hasn't already been claimed by a deeper core
-                markers_bg[(seed_mask == 255) & (markers_bg == 0)] = seed_id
-                seed_id += 1
+                if hull_area == 0:
+                    continue
+                    
+                seed_solidity = float(area) / hull_area
+                
+                # Register seed strictly if the shape is solid and location hasn't already been claimed
+                if seed_solidity >= self.solidity_thr:
+                    seed_mask = np.zeros_like(original_mask)
+                    cv2.drawContours(seed_mask, [contour], -1, 255, thickness=cv2.FILLED)
+                    
+                    markers_bg[(seed_mask == 255) & (markers_bg == 0)] = seed_id
+                    seed_id += 1
 
-        # 3. Define Watershed Boundaries safely boundaries
-        kernel = np.ones((3, 3), np.uint8)
+        # 5. Define Watershed Boundaries safely
         sure_bg = cv2.dilate(original_mask, kernel, iterations=2)
         unknown = cv2.subtract(sure_bg, (markers_bg > 0).astype(np.uint8) * 255)
         
         markers = markers_bg + 1
         markers[unknown == 255] = 0
         
-        # 4. Execute Watershed
+        # 6. Execute Watershed
         img_color = cv2.cvtColor(original_mask, cv2.COLOR_GRAY2BGR)
         markers = cv2.watershed(img_color, markers)
         
-        # 5. Extract Individual Instances preserving pixel-perfect outer boundaries
+        # 7. Extract Individual Instances preserving pixel-perfect outer boundaries
         separated_instances = []
         for marker_val in range(2, markers.max() + 1):
             obj_mask = np.zeros_like(original_mask)
-            # Intersection forces the separated mask to NEVER exceed or alter the CNN's exact prediction
+            # Intersection forces the separated mask to NEVER exceed CNN's exact prediction
             obj_mask[(markers == marker_val) & (original_mask == 255)] = 255
             
             if cv2.countNonZero(obj_mask) > self.min_area_after_watershed:
@@ -170,7 +190,7 @@ class RockSegmentationPipeline:
             # erode its boundaries destructively.
             if solidity >= self.solidity_thr:
                 final_predictions.append({
-                    "polygon": poly,
+                    "polygon": poly_int,
                     "class_id": int(cls_id),
                     "score": float(base_score)
                 })

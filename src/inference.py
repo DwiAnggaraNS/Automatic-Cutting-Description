@@ -117,11 +117,18 @@ class RockSegmentationPipeline:
                     
                 seed_solidity = float(area) / hull_area
                 
-                # Register seed strictly if the shape is solid and location hasn't already been claimed
+                # Validate the seed shape using the solidity metric
                 if seed_solidity >= self.solidity_thr:
                     seed_mask = np.zeros_like(original_mask)
                     cv2.drawContours(seed_mask, [contour], -1, 255, thickness=cv2.FILLED)
                     
+                    # BEST PRACTICE: Prevent Concentric/Recursive Seeds (Over-segmentation fix)
+                    # If this contour encompasses an already registered seed from a deeper threshold,
+                    # it represents the base of the identical peak, NOT a separate rock instance.
+                    if np.any(markers_bg[(seed_mask == 255)] > 0):
+                        continue
+                        
+                    # Register the new isolated seed point
                     markers_bg[(seed_mask == 255) & (markers_bg == 0)] = seed_id
                     seed_id += 1
 

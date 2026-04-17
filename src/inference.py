@@ -4,7 +4,7 @@ from shapely.geometry import Polygon
 from shapely.validation import make_valid
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Any
 import os
 
 try:
@@ -177,25 +177,22 @@ class RockSegmentationPipeline:
                 
         return separated_instances
 
-    def run_pipeline(self, tta_inferences: List[Dict]) -> Dict[int, List[np.ndarray]]:
+    def run_pipeline(self, tta_inferences: List[Dict]) -> List[Dict[str, Any]]:
         """
-        Executes the entire post-processing workflow precisely in order:
-        1. Receive TTA inferences.
-        2. Apply WBF to fuse bounding boxes.
-        3. Reconstruct a single unified binary mask based on fused boxes.
-        4. Apply Solidity-Based Watershed to the unified mask.
-        5. Map each separated contour back to the best matched class label.
+        Executes the post-processing workflow avoiding TTA geometric overlapping artifacts:
+        1. Receive TTA inferences and apply Weighted Boxes Fusion (WBF).
+        2. Prevent duplicated shapes by extracting only the highest confidence source mask per WBF box.
+        3. Create a master binary mask and apply Solidity-Based Watershed to split adhered rocks.
+        4. Map each split polygon back to the fused box to inherit the correct class label and confidence score.
         
         Args:
-            tta_inferences: A list of dictionaries, where each dict represents 
-                            one TTA pass containing 'boxes', 'scores', 'labels', 
-                            and 'masks'.
+            tta_inferences: List of dicts representing TTA passes ('boxes', 'scores', 'labels', 'masks').
                             
         Returns:
-            A dictionary mapping class IDs to lists of polygon coordinates arrays.
+            List of dictionaries containing {"polygon": ndarray, "class_id": int, "score": float}.
         """
         if not tta_inferences:
-            return {}
+            return []
             
         boxes_list = [infer['boxes'] for infer in tta_inferences]
         scores_list = [infer['scores'] for infer in tta_inferences]
@@ -205,22 +202,59 @@ class RockSegmentationPipeline:
             boxes_list, scores_list, labels_list
         )
         
-        unified_binary_mask = self._reconstruct_unified_mask(fused_boxes, tta_inferences)
+        if len(fused_boxes) == 0:
+            return []
+            
+        # Extract base dimensions dynamically
+        h, w = 640, 640
+        for infer in tta_inferences:
+            if 'masks' in infer and len(infer['masks']) > 0:
+                h, w = infer['masks'][0].shape[:2]
+                break
+                
+        # Consolidate all pass data for Intersection matching
+        all_src_boxes, all_src_masks, all_src_scores = [], [], []
+        for infer in tta_inferences:
+            if 'boxes' in infer and 'masks' in infer:
+                for box, mask, score in zip(infer['boxes'], infer['masks'], infer['scores']):
+                    all_src_boxes.append(box)
+                    all_src_masks.append(mask)
+                    all_src_scores.append(score)
+                    
+        # 1. Master mask reconstruction (Preventing "Double Stamping" artifacts)
+        unified_binary_mask = np.zeros((h, w), dtype=np.uint8)
+        
+        for f_box in fused_boxes:
+            f_area = max(0.0, f_box[2] - f_box[0]) * max(0.0, f_box[3] - f_box[1])
+            best_mask = None
+            best_score = -1.0
+            
+            for s_box, s_mask, s_score in zip(all_src_boxes, all_src_masks, all_src_scores):
+                inter_w = max(0.0, min(f_box[2], s_box[2]) - max(f_box[0], s_box[0]))
+                inter_h = max(0.0, min(f_box[3], s_box[3]) - max(f_box[1], s_box[1]))
+                inter_area = inter_w * inter_h
+                
+                if inter_area > 0:
+                    s_area = max(0.0, s_box[2] - s_box[0]) * max(0.0, s_box[3] - s_box[1])
+                    iou = inter_area / float(f_area + s_area - inter_area + 1e-6)
+                    
+                    # Exact geometric selection: Take best confidence mask cleanly aligned to WBF box
+                    if iou > self.wbf_iou_thr - 0.15 and s_score > best_score:
+                        best_score = s_score
+                        best_mask = s_mask
+                        
+            if best_mask is not None:
+                if best_mask.shape[:2] != (h, w):
+                    best_mask = cv2.resize(best_mask, (w, h), interpolation=cv2.INTER_NEAREST)
+                unified_binary_mask = cv2.bitwise_or(unified_binary_mask, best_mask)
+                
+        # 2. Watershed separation
         separated_masks = self.apply_solidity_based_watershed(unified_binary_mask)
         
-        h, w = unified_binary_mask.shape[:2]
+        # 3. Polygon extraction and score mapping
+        fused_boxes_px = [[bx[0]*w, bx[1]*h, bx[2]*w, bx[3]*h] for bx in fused_boxes]
+        final_predictions = []
         
-        # Convert normalized fused boxes to pixel coordinates for intersection matching
-        fused_boxes_px = []
-        for box in fused_boxes:
-            fused_boxes_px.append([
-                box[0] * w, box[1] * h,
-                box[2] * w, box[3] * h
-            ])
-            
-        polygons_by_class = {}
-        
-        # Convert separated binary masks into clean polygons mapped to class labels
         for mask_instance in separated_masks:
             contours, _ = cv2.findContours(mask_instance, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for cnt in contours:
@@ -228,102 +262,31 @@ class RockSegmentationPipeline:
                     continue
                 pts = cnt.reshape(-1, 2)
                 if len(pts) >= 3:
-                    # Map polygon to the corresponding WBF fused box class
-                    x, y, bw, bh = cv2.boundingRect(pts)
-                    poly_box = [x, y, x + bw, y + bh]
+                    poly_box = cv2.boundingRect(pts)
+                    px, py, pw, ph = poly_box
+                    pbox_arr = [px, py, px + pw, py + ph]
                     
                     best_inter = 0
                     best_class = int(fused_labels[0]) if len(fused_labels) > 0 else 0
+                    best_fused_score = float(fused_scores[0]) if len(fused_scores) > 0 else 0.50
                     
-                    for fbox, flabel in zip(fused_boxes_px, fused_labels):
-                        ix_min = max(poly_box[0], fbox[0])
-                        iy_min = max(poly_box[1], fbox[1])
-                        ix_max = min(poly_box[2], fbox[2])
-                        iy_max = min(poly_box[3], fbox[3])
-                        
-                        iw = max(0, ix_max - ix_min)
-                        ih = max(0, iy_max - iy_min)
+                    for fbox, flabel, fscore in zip(fused_boxes_px, fused_labels, fused_scores):
+                        iw = max(0, min(pbox_arr[2], fbox[2]) - max(pbox_arr[0], fbox[0]))
+                        ih = max(0, min(pbox_arr[3], fbox[3]) - max(pbox_arr[1], fbox[1]))
                         inter_area = iw * ih
                         
                         if inter_area > best_inter:
                             best_inter = inter_area
                             best_class = int(flabel)
+                            best_fused_score = float(fscore)
                             
-                    if best_class not in polygons_by_class:
-                        polygons_by_class[best_class] = []
-                    polygons_by_class[best_class].append(pts)
+                    final_predictions.append({
+                        "polygon": pts,
+                        "class_id": best_class,
+                        "score": best_fused_score
+                    })
                     
-        return polygons_by_class
-
-    def _reconstruct_unified_mask(self, fused_boxes: np.ndarray, tta_inferences: List[Dict]) -> np.ndarray:
-        """
-        Reconstructs a unified 2D binary mask by mapping WBF fused boxes back 
-        to the best corresponding TTA masks based on IoU.
-        """
-        if not tta_inferences or len(tta_inferences) == 0:
-            return np.zeros((640, 640), dtype=np.uint8)
-            
-        # Use first available mask to determine image dimensions
-        dummy_shape = (640, 640)
-        for infer in tta_inferences:
-            if 'masks' in infer and len(infer['masks']) > 0:
-                dummy_shape = infer['masks'][0].shape[:2]
-                break
-                
-        unified_mask = np.zeros(dummy_shape, dtype=np.uint8)
-        
-        if len(fused_boxes) == 0:
-            return unified_mask
-            
-        # Compile all source boxes & masks across TTA passed
-        all_src_boxes = []
-        all_src_masks = []
-        for infer in tta_inferences:
-            if 'boxes' in infer and 'masks' in infer:
-                for box, mask in zip(infer['boxes'], infer['masks']):
-                    all_src_boxes.append(box)
-                    all_src_masks.append(mask)
-                    
-        # For each WBF fused box, aggregate all source masks that overlap significantly
-        for f_box in fused_boxes:
-            matched_masks = []
-            
-            f_xmin, f_ymin, f_xmax, f_ymax = f_box
-            f_area = max(0.0, f_xmax - f_xmin) * max(0.0, f_ymax - f_ymin)
-            
-            for s_box, s_mask in zip(all_src_boxes, all_src_masks):
-                s_xmin, s_ymin, s_xmax, s_ymax = s_box
-                
-                inter_xmin = max(f_xmin, s_xmin)
-                inter_ymin = max(f_ymin, s_ymin)
-                inter_xmax = min(f_xmax, s_xmax)
-                inter_ymax = min(f_ymax, s_ymax)
-                
-                inter_w = max(0.0, inter_xmax - inter_xmin)
-                inter_h = max(0.0, inter_ymax - inter_ymin)
-                inter_area = inter_w * inter_h
-                
-                if inter_area > 0:
-                    s_area = max(0.0, s_xmax - s_xmin) * max(0.0, s_ymax - s_ymin)
-                    iou = inter_area / float(f_area + s_area - inter_area + 1e-6)
-                    # If this source mask significantly overlaps with this WBF group
-                    if iou > self.wbf_iou_thr - 0.15:
-                        matched_masks.append(s_mask)
-                        
-            # Apply Soft TTA Mask Averaging to prevent artifacting from shifting boxes!
-            if matched_masks:
-                # Stack masks and calculate geometric mean to smooth contours
-                stacked = np.stack(matched_masks, axis=0)
-                avg_mask = np.mean(stacked, axis=0)
-                
-                # Threshold at 50% majority voting
-                bin_mask = (avg_mask >= 0.5).astype(np.uint8) * 255
-                
-                if bin_mask.shape[:2] != unified_mask.shape[:2]:
-                    bin_mask = cv2.resize(bin_mask, (unified_mask.shape[1], unified_mask.shape[0]), interpolation=cv2.INTER_NEAREST)
-                unified_mask = cv2.bitwise_or(unified_mask, bin_mask)
-                
-        return unified_mask
+        return final_predictions
 
 class RockVisualizer:
     """

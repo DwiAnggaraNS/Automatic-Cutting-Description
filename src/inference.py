@@ -60,20 +60,14 @@ class RockSegmentationPipeline:
 
     def apply_solidity_based_watershed(self, binary_mask: np.ndarray) -> List[np.ndarray]:
         """
-        Applies a Marker-Based Watershed algorithm using contour solidity to 
-        prevent over-segmentation of complex, adhered blasted rock images.
-        
-        Reference:
-        Guo, Q., Wang, Y., Yang, S., & Xiang, Z. (2022). "A method of blasted rock 
-        image segmentation based on improved watershed algorithm." Scientific Reports.
+        Applies a Marker-Based Watershed algorithm using distance transforms to safely
+        split under-segmented blobs without destructing the precise outer boundaries.
 
         Algorithm Steps:
-        1. Morphological optimization to smooth edges and remove noise.
-        2. Distance transformation of the binary mask.
-        3. Multiple gray thresholding to find contours.
-        4. Calculate Solidity (Area / Convex Hull Area).
-        5. Mark contours with solidity > threshold as definitive seed points.
-        6. Apply cv2.watershed to segment adhered rocks.
+        1. Maintain original precise CNN prediction mask.
+        2. Apply distance transform for localized maxima identification.
+        3. Threshold at varying depths to determine logical seed points for discrete rocks.
+        4. Apply cv2.watershed specifically restricted to the actual blob footprint.
         
         Args:
             binary_mask: A 2D numpy array (0 and 255) representing the fused rock mask.
@@ -81,26 +75,19 @@ class RockSegmentationPipeline:
         Returns:
             List of 2D numpy arrays, where each array is a single isolated rock instance.        
         """
-        # Ensure mask is uint8
-        mask = (binary_mask > 0).astype(np.uint8) * 255
+        original_mask = (binary_mask > 0).astype(np.uint8) * 255
         
-        #1. Morphological Optimization
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-
-        #2. Distance Transform
-        dist_transform = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+        # 1. Distance Transform
+        dist_transform = cv2.distanceTransform(original_mask, cv2.DIST_L2, 3)
         cv2.normalize(dist_transform, dist_transform, 0, 255.0, cv2.NORM_MINMAX)
         dist_transform_8u = dist_transform.astype(np.uint8)
 
-        #3. Multiple Gray Thresholds
-        # We iterate through different thresholds to avoid missing smaller seeds
-        # or over-segmenting larger ones (Guo et al., 2022).
-        markers_bg = np.zeros_like(mask, dtype=np.int32)
+        # 2. Dynamic Thresholding for Seeds
+        markers_bg = np.zeros_like(original_mask, dtype=np.int32)
         seed_id = 1
         
-        thresholds = [64, 128, 192]
+        # Evaluate from deepest core to shallower core 
+        thresholds = [192, 128, 64]
         for thresh in thresholds:
             _, thresholded_dist = cv2.threshold(dist_transform_8u, thresh, 255, cv2.THRESH_BINARY)
             contours, _ = cv2.findContours(thresholded_dist, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -110,42 +97,38 @@ class RockSegmentationPipeline:
                 if area < 10:
                     continue
                     
-                convex_hull = cv2.convexHull(contour)
-                hull_area = cv2.contourArea(convex_hull)
+                seed_mask = np.zeros_like(original_mask)
+                cv2.drawContours(seed_mask, [contour], -1, 255, thickness=cv2.FILLED)
                 
-                if hull_area == 0:
-                    continue
-                
-                # 4. Calculate Solidity            
-                solidity = float(area) / hull_area
+                # Register seed strictly if the location hasn't already been claimed by a deeper core
+                markers_bg[(seed_mask == 255) & (markers_bg == 0)] = seed_id
+                seed_id += 1
 
-                # 5. Mark valid seed points
-                if solidity >= self.solidity_thr:
-                    cv2.drawContours(markers_bg, [contour], -1, (seed_id), thickness=cv2.FILLED)
-                    seed_id += 1
-
-        sure_bg = cv2.dilate(mask, kernel, iterations=3)
+        # 3. Define Watershed Boundaries safely boundaries
+        kernel = np.ones((3, 3), np.uint8)
+        sure_bg = cv2.dilate(original_mask, kernel, iterations=2)
         unknown = cv2.subtract(sure_bg, (markers_bg > 0).astype(np.uint8) * 255)
         
         markers = markers_bg + 1
         markers[unknown == 255] = 0
         
-        # 6. Apply Watershed (Requires 3-channel image)
-        img_color = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        # 4. Execute Watershed
+        img_color = cv2.cvtColor(original_mask, cv2.COLOR_GRAY2BGR)
         markers = cv2.watershed(img_color, markers)
         
-        # 7. Extract Individual Instances
+        # 5. Extract Individual Instances preserving pixel-perfect outer boundaries
         separated_instances = []
         for marker_val in range(2, markers.max() + 1):
-            obj_mask = np.zeros_like(mask)
-            obj_mask[markers == marker_val] = 255
+            obj_mask = np.zeros_like(original_mask)
+            # Intersection forces the separated mask to NEVER exceed or alter the CNN's exact prediction
+            obj_mask[(markers == marker_val) & (original_mask == 255)] = 255
             
-            if cv2.countNonZero(obj_mask) > 0:
+            if cv2.countNonZero(obj_mask) > self.min_area_after_watershed:
                 separated_instances.append(obj_mask)
                 
-        # Fallback if watershed removed everything
-        if not separated_instances and cv2.countNonZero(mask) > 0:
-            separated_instances.append(mask)
+        # Safe fallback: if watershed fails to segment anything valid, return the original whole blob
+        if not separated_instances and cv2.countNonZero(original_mask) > 0:
+            separated_instances.append(original_mask)
                 
         return separated_instances
 
@@ -174,9 +157,29 @@ class RockSegmentationPipeline:
             if len(poly) < 3:
                 continue
                 
-            # Create a localized blank map for this specific instance to check solidity & morphological features
-            isolated_mask = np.zeros((h, w), dtype=np.uint8)
+            # Create isolated properties for evaluation
             poly_int = poly.astype(np.int32)
+            area = cv2.contourArea(poly_int)
+            hull = cv2.convexHull(poly_int)
+            hull_area = cv2.contourArea(hull)
+            solidity = float(area) / hull_area if hull_area > 0 else 0.0
+            
+            # BEST PRACTICE: If the polygon generated by YOLO is already 
+            # highly solid/convex, it is highly likely a single standalone rock.
+            # Running morphological watershed on a perfect contour will only 
+            # erode its boundaries destructively.
+            if solidity >= self.solidity_thr:
+                final_predictions.append({
+                    "polygon": poly,
+                    "class_id": int(cls_id),
+                    "score": float(base_score)
+                })
+                continue
+                
+            # If the solidity is below threshold, it's considered an irregular, complex 
+            # blob that might contain multiple adhered rocks fused together by the CNN.
+            # Proceed with explicit marker-based watershed just for this isolated blob.
+            isolated_mask = np.zeros((h, w), dtype=np.uint8)
             
             # Draw as filled polygon
             cv2.fillPoly(isolated_mask, [poly_int], 255)

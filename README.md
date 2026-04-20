@@ -186,3 +186,9 @@ notebooks/evaluation/Interactive_Inference.ipynb     (visual & post-processing U
 - Python ≥ 3.9
 - CUDA-capable GPU (≥ 8GB VRAM recommended)
 - See `requirements.txt` for full dependency list
+
+### Dataset Variants (Single Model)
+- **D2a**: CLAHE + Mild Brightness/Contrast (Test impact of illumination normalization)
+- **D2b**: D2a + Color Jitter (minimal) (Test model sensitivity to color variation)
+- **D2c (full)**: D2b + Geometric (Flip/Rotation) (Test orientation invariance)
+

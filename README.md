@@ -62,16 +62,18 @@ automatic-cutting-description/
 │
 ├── scripts/                        # Utility scripts
 │   ├── data_preprocessing/
-│   │   ├── coco_polygon_simplification.py
-│   │   ├── convert_coco_to_yolo.py
-│   │   ├── convert_yolo_to_coco.py
-│   │   ├── convert_to_single_class_yolo.py  # Stage 1 Dataset Prep
-│   │   ├── extract_classifier_crops.py      # Stage 2 Dataset Prep
-│   │   ├── oversample_minority_crops.py     # Class imbalance handling
-│   │   ├── merge_cvat_datasets.py
-│   │   ├── redistribute_dataset.py
-│   │   ├── remap_coco_categories.py
-│   │   └── slice_4k_datasets.py
+│   │   ├── single_model/                # Unified YOLO segmentation prep
+│   │   │   ├── coco_polygon_simplification.py
+│   │   │   ├── convert_coco_to_yolo.py
+│   │   │   ├── convert_yolo_to_coco.py
+│   │   │   ├── merge_cvat_datasets.py
+│   │   │   ├── redistribute_dataset.py
+│   │   │   ├── remap_coco_categories.py
+│   │   │   └── slice_4k_datasets.py
+│   │   └── dual-stage_model/            # Decoupled Segmentor & Classifier prep
+│   │       ├── convert_to_single_class_yolo.py  # Stage 1 Dataset Prep
+│   │       ├── extract_classifier_crops.py      # Stage 2 Dataset Prep
+│   │       └── oversample_minority_crops.py     # Class imbalance handling
 │   ├── data_analysis/
 │   │   ├── get_statistics_data.py
 │   │   ├── minority_class_extractions.py
@@ -119,25 +121,25 @@ Open `notebooks/training/YOLO_Trainer.ipynb` and click **Run All Cells**.
 ```
 [Optional] Legacy YOLO Dataset
         ↓
-scripts/data_preprocessing/convert_yolo_to_coco.py   (Convert backward to COCO)
+scripts/data_preprocessing/single_model/convert_yolo_to_coco.py   (Convert backward to COCO)
         |
 Raw Images + CVAT Annotation (Separated Tasks) + Converted COCO
         ↓
-scripts/data_preprocessing/remap_coco_categories.py  (Standardize class names and IDs across datasets)
+scripts/data_preprocessing/single_model/remap_coco_categories.py  (Standardize class names and IDs across datasets)
         ↓
-scripts/data_preprocessing/merge_cvat_datasets.py    (Merge separated CVAT COCO datasets into one unified dataset)
+scripts/data_preprocessing/single_model/merge_cvat_datasets.py    (Merge separated CVAT COCO datasets into one unified dataset)
         ↓
-scripts/data_preprocessing/redistribute_dataset.py   (Multi-label Stratified train/val/test split on Unified COCO)
+scripts/data_preprocessing/single_model/redistribute_dataset.py   (Multi-label Stratified train/val/test split on Unified COCO)
         ↓
-scripts/data_preprocessing/slice_4k_datasets.py      (Slice ONLY Train & Val 4K images + polygons to 960x960 using SAHI)
+scripts/data_preprocessing/single_model/slice_4k_datasets.py      (Slice ONLY Train & Val 4K images + polygons to 960x960 using SAHI)
         ↓
-scripts/data_preprocessing/convert_coco_to_yolo.py   (Convert COCO Splits → YOLO format)
+scripts/data_preprocessing/single_model/convert_coco_to_yolo.py   (Convert COCO Splits → YOLO format)
         ↓
 scripts/data_analysis/get_statistics_data.py          (class balance check)
         ↓
 scripts/data_analysis/minority_class_extractions.py  (extract minority classes)
         ↓
-scripts/data_preprocessing/oversample_minority_crops.py (augment single rock crops for classifier trainset)
+scripts/data_preprocessing/dual-stage_model/oversample_minority_crops.py (augment single rock crops for classifier trainset)
         ↓
 notebooks/training/Dual_Model_Trainer.ipynb          (Stage 1 Seg & Stage 2 Cls)
         ↓

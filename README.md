@@ -50,6 +50,9 @@ automatic-cutting-description/
 │   │   ├── Detectron2_MaskRCNN_Trainer.ipynb  # Detectron2 training pipeline
 │   │   ├── YOLO_Trainer.ipynb           # Main training notebook
 │   │   └── YOLO_Trainer_Original.ipynb  # Reference/baseline notebook
+│   ├── tuning/
+│   │   ├── Detectron2_Hyperparameter_Tuner.ipynb # Detectron2 Optuna tuning
+│   │   └── YOLO_Hyperparameter_Tuner.ipynb       # YOLO Optuna tuning
 │   └── evaluation/
 │       ├── Independent_Evaluator.ipynb  # Model evaluation & metrics
 │       └── Interactive_Inference.ipynb  # Single image test inference & mask exploration

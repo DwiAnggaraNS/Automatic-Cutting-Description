@@ -47,6 +47,7 @@ automatic-cutting-description/
 │
 ├── notebooks/                      # Jupyter Notebooks
 │   ├── training/
+│   │   ├── Detectron2_MaskRCNN_Trainer.ipynb  # Detectron2 training pipeline
 │   │   ├── YOLO_Trainer.ipynb           # Main training notebook
 │   │   └── YOLO_Trainer_Original.ipynb  # Reference/baseline notebook
 │   └── evaluation/

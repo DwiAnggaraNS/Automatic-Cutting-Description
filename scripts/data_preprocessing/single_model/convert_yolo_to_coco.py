@@ -15,6 +15,17 @@ LEGACY_CLASSES = {
     7: "Coal"
 }
 
+# The new standard mapping for Batch 4 onward
+NEW_CLASSES = {
+    0: "Silt",
+    1: "Sandstone",
+    2: "Limestone",
+    3: "Coal",
+    4: "Shalestone",
+    5: "Quartz",
+    6: "Cement"
+}
+
 def calculate_bbox_and_area(polygon):
     """
     Calculates bounding box [x_min, y_min, width, height] and area 
@@ -33,11 +44,14 @@ def calculate_bbox_and_area(polygon):
     
     return bbox, area
 
-def convert_yolo_seg_parent_to_coco(parent_input_folder, output_folder):
+def convert_yolo_seg_parent_to_coco(parent_input_folder, output_folder, is_legacy=True):
     """
-    Converts a legacy YOLO segmentation dataset with train/val/test splits
+    Converts a YOLO segmentation dataset with train/val/test splits
     into a SINGLE unified CVAT-like COCO instance_default.json format.
+    Uses either legacy or new standard class mappings based on is_legacy flag.
     """
+    active_classes = LEGACY_CLASSES if is_legacy else NEW_CLASSES
+    
     os.makedirs(output_folder, exist_ok=True)
     out_images_dir = os.path.join(output_folder, "images")
     out_annotations_dir = os.path.join(output_folder, "annotations")
@@ -47,8 +61,8 @@ def convert_yolo_seg_parent_to_coco(parent_input_folder, output_folder):
     # Initialize unified COCO structure
     coco_data = {
         "licenses": [{"name": "", "id": 0, "url": ""}],
-        "info": {"contributor": "", "date_created": "", "description": "Converted from Legacy YOLO (Merged)", "url": "", "version": "", "year": ""},
-        "categories": [{"id": k, "name": v} for k, v in LEGACY_CLASSES.items()],
+        "info": {"contributor": "", "date_created": "", "description": "Converted from YOLO (Merged)", "url": "", "version": "", "year": ""},
+        "categories": [{"id": k, "name": v} for k, v in active_classes.items()],
         "images": [],
         "annotations": []
     }
@@ -156,20 +170,23 @@ def convert_yolo_seg_parent_to_coco(parent_input_folder, output_folder):
 
 def main():
     print("===============================================")
-    print("   Legacy YOLO to COCO Conversion (Unified)    ")
+    print("   YOLO to COCO Conversion (Unified)           ")
     print("===============================================")
-    print("This tool converts old train/val/test YOLO format splits")
+    print("This tool converts YOLO format splits (train/val/test)")
     print("and merges them back into a SINGLE CVAT-like COCO format.")
     
-    parent_input_path = input("\nEnter the absolute DIRECTORY path of the legacy dataset parent folder (e.g. /dataset/C_2026_1d80): ").strip()
+    parent_input_path = input("\nEnter the absolute DIRECTORY path of the YOLO dataset parent folder (e.g. /dataset/batch4): ").strip()
     
     if not os.path.exists(parent_input_path) or not os.path.isdir(parent_input_path):
         print(f"❌ Error: The path '{parent_input_path}' does not exist or is not a directory.")
         return
 
-    output_parent_path = input("Enter the absolute OUTPUT path for unified converted dataset (e.g. /dataset/C_2026_COCO): ").strip()
+    is_legacy_input = input("Does this dataset contain legacy labels (e.g. Silt, Loose Sand, etc.)? [y/n]: ").strip().lower()
+    is_legacy = is_legacy_input == 'y'
+
+    output_parent_path = input("Enter the absolute OUTPUT path for unified converted dataset (e.g. /dataset/COCO_Out): ").strip()
     
-    convert_yolo_seg_parent_to_coco(parent_input_path, output_parent_path)
+    convert_yolo_seg_parent_to_coco(parent_input_path, output_parent_path, is_legacy=is_legacy)
 
 if __name__ == "__main__":
     main()

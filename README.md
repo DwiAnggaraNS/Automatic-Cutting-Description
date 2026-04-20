@@ -56,6 +56,8 @@ automatic-cutting-description/
 │       └── YOLO_Visualizer.ipynb        # Training visualization & comparison
 │
 ├── datasets/                       # Dataset processing and SAM Annotation
+│   ├── generate-dataset/
+│   │   └── Dataset_Preprocessing_Generator.ipynb  # Dataset augmentation generator
 │   ├── sam-annotation/
 │   │   ├── 01_sam_auto_segmentation.ipynb # SAM mask generation pipeline
 │   │   └── 02_cvat_converter.ipynb        # CVAT XML converter

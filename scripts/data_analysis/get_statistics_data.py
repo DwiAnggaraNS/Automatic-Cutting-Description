@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
 """
-Script to collect statistics for each class in the YOLO dataset.
+Script to collect statistics for each class in the dataset.
+Supports both YOLO and COCO instance segmentation formats.
 Analyzes train, test, and val splits.
 """
 
 import os
+import json
 from pathlib import Path
 from collections import defaultdict
 import yaml
 
-def load_class_names(data_yaml_path):
-    """Load class names from data.yaml"""
+def load_class_names_yolo(data_yaml_path):
+    """Load class names from YOLO data.yaml"""
     with open(data_yaml_path, 'r') as f:
         data = yaml.safe_load(f)
-    return data['names']
+    names = data.get('names', {})
+    if isinstance(names, list):
+        return {i: name for i, name in enumerate(names)}
+    return names
 
-def count_class_instances(labels_dir, num_classes):
-    """Count instances of each class in label files"""
+def load_class_names_coco(json_path):
+    """Load class names from COCO annotations json"""
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    return {cat['id']: cat['name'] for cat in data.get('categories', [])}
+
+def count_class_instances_yolo(labels_dir):
+    """Count instances of each class in YOLO label files"""
     class_counts = defaultdict(int)
     file_count = 0
     
@@ -32,21 +43,35 @@ def count_class_instances(labels_dir, num_classes):
                         parts = line.strip().split()
                         if parts:
                             class_id = int(parts[0])
-                            if 0 <= class_id < num_classes:
-                                class_counts[class_id] += 1
+                            class_counts[class_id] += 1
         except Exception as e:
             print(f"Error reading {label_file}: {e}")
     
     return class_counts, file_count
 
+def count_class_instances_coco(json_path):
+    """Count instances of each class in COCO annotation file"""
+    class_counts = defaultdict(int)
+    
+    if not os.path.exists(json_path):
+        return class_counts, 0
+        
+    try:
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+            
+        for ann in data.get('annotations', []):
+            class_counts[ann['category_id']] += 1
+            
+        file_count = len(data.get('images', []))
+        return class_counts, file_count
+    except Exception as e:
+        print(f"Error reading {json_path}: {e}")
+        return class_counts, 0
+
 def create_simplified_mapping():
     """
     Create mapping from detailed classes to simplified categories.
-    Combines similar classes (e.g., Silt + Loose Silt, Limestone + Loose Limestone)
-    Since we have standardized the classes in the new pipeline, we map 
-    the IDs based on the new final standardized names.
-    Note: In COCO standard mapping is usually 1-indexed, but after 
-    YOLO conversion they become 0-indexed. Adjusting for 0-indexed YOLO format.
     """
     return {
         0: 'Silt',
@@ -60,73 +85,92 @@ def create_simplified_mapping():
 
 def main():
     print("========================================")
-    print("   YOLO Dataset Statistics Analyzer     ")
+    print("   Dataset Statistics Analyzer          ")
     print("========================================")
     
-    # Prompt user for the dataset path interactively
-    dataset_path_input = input("Enter the absolute path to your YOLO dataset folder (e.g., /path/to/dataset): ").strip()
+    dataset_path_input = input("Enter the absolute path to your dataset folder (e.g., /path/to/dataset): ").strip()
     base_dir = Path(dataset_path_input)
     
     if not base_dir.exists() or not base_dir.is_dir():
-        print(f"❌ Error: The path '{base_dir}' does not exist or is not a directory.")
+        print(f"[Error] The path '{base_dir}' does not exist or is not a directory.")
         return
 
-    data_yaml_path = base_dir / 'data.yaml'
-    
-    if not data_yaml_path.exists():
-        print(f"❌ Error: data.yaml not found in {base_dir}. Please ensure it is a valid YOLO dataset.")
+    dataset_format = input("Enter the dataset format (YOLO or COCO): ").strip().upper()
+    if dataset_format not in ["YOLO", "COCO"]:
+        print("[Error] Invalid format. Supported formats are YOLO and COCO.")
         return
+
+    class_names = {}
+    splits = ['train', 'test', 'val']
+    all_splits_stats = {}
+    total_instances_all = defaultdict(int)
+    total_files_all = 0
     
-    # Load class names and number of classes
-    class_names = load_class_names(data_yaml_path)
-    num_classes = len(class_names)
-    
-    # Create simplified mapping
+    if dataset_format == "YOLO":
+        data_yaml_path = base_dir / 'data.yaml'
+        if not data_yaml_path.exists():
+            print(f"[Error] data.yaml not found in {base_dir}. Ensure it is a valid YOLO dataset.")
+            return
+            
+        class_names = load_class_names_yolo(data_yaml_path)
+        
+        for split in splits:
+            labels_dir = base_dir / split / 'labels'
+            if labels_dir.exists():
+                class_counts, file_count = count_class_instances_yolo(labels_dir)
+                all_splits_stats[split] = (class_counts, file_count)
+                
+    elif dataset_format == "COCO":
+        for split in splits:
+            json_path = base_dir / split / 'annotations' / 'instances_default.json'
+            if not json_path.exists():
+                json_path = base_dir / split / '_annotations.coco.json'
+                
+            if json_path.exists():
+                if not class_names:
+                    class_names = load_class_names_coco(json_path)
+                class_counts, file_count = count_class_instances_coco(json_path)
+                all_splits_stats[split] = (class_counts, file_count)
+                
+        if not class_names:
+            print(f"[Error] No COCO annotations found in train/test/val subdirectories.")
+            return
+
     simplified_mapping = create_simplified_mapping()
     
     print("=" * 80)
     print("DATASET STATISTICS - CLASS DISTRIBUTION")
     print("=" * 80)
-    print(f"\nTotal Classes: {num_classes}\n")
+    print(f"\nFormat: {dataset_format}")
+    print(f"Total Classes: {len(class_names)}\n")
     
-    # prefix = "backup/"
-    prefix = ""
-    splits = [f'{prefix}train', f'{prefix}test', f'{prefix}val']
-    all_splits_stats = {}
-    total_instances_all = defaultdict(int)
-    total_files_all = 0
-    
-    # Analyze each split
     for split in splits:
-        labels_dir = base_dir / split / 'labels'
-        class_counts, file_count = count_class_instances(labels_dir, num_classes)
-        all_splits_stats[split] = (class_counts, file_count)
+        if split not in all_splits_stats:
+            continue
+            
+        class_counts, file_count = all_splits_stats[split]
         total_files_all += file_count
         
-        # Print split statistics
         print(f"\n{split.upper()} SPLIT")
         print("-" * 80)
-        print(f"Number of labeled files: {file_count}")
+        print(f"Number of labeled images: {file_count}")
         
         total_instances = sum(class_counts.values())
         print(f"Total instances: {total_instances}\n")
         
-        # Print per-class statistics
         print(f"{'Class ID':<10} {'Class Name':<40} {'Count':<10} {'Percentage':<10}")
         print("-" * 80)
         
-        for class_id in range(num_classes):
-            count = class_counts[class_id]
+        for class_id, class_name in class_names.items():
+            count = class_counts.get(class_id, 0)
             percentage = (count / total_instances * 100) if total_instances > 0 else 0
-            class_name = class_names[class_id] if class_id < len(class_names) else f"Unknown_{class_id}"
             print(f"{class_id:<10} {class_name:<40} {count:<10} {percentage:>6.2f}%")
             total_instances_all[class_id] += count
     
-    # Print overall statistics
     print("\n" + "=" * 80)
     print("OVERALL STATISTICS (ALL SPLITS COMBINED)")
     print("=" * 80)
-    print(f"Total labeled files: {total_files_all}\n")
+    print(f"Total labeled images: {total_files_all}\n")
     
     total_all_instances = sum(total_instances_all.values())
     print(f"Total instances: {total_all_instances}\n")
@@ -134,13 +178,11 @@ def main():
     print(f"{'Class ID':<10} {'Class Name':<40} {'Count':<10} {'Percentage':<10}")
     print("-" * 80)
     
-    for class_id in range(num_classes):
-        count = total_instances_all[class_id]
+    for class_id, class_name in class_names.items():
+        count = total_instances_all.get(class_id, 0)
         percentage = (count / total_all_instances * 100) if total_all_instances > 0 else 0
-        class_name = class_names[class_id] if class_id < len(class_names) else f"Unknown_{class_id}"
         print(f"{class_id:<10} {class_name:<40} {count:<10} {percentage:>6.2f}%")
     
-    # Print simplified statistics
     print("\n" + "=" * 80)
     print("SIMPLIFIED STATISTICS (GROUPED CLASSES)")
     print("=" * 80)
@@ -148,7 +190,7 @@ def main():
     
     simplified_counts = defaultdict(int)
     for class_id, count in total_instances_all.items():
-        simplified_category = simplified_mapping[class_id]
+        simplified_category = simplified_mapping.get(class_id, class_names.get(class_id, f"Unknown_{class_id}"))
         simplified_counts[simplified_category] += count
     
     total_simplified_instances = sum(simplified_counts.values())
@@ -157,7 +199,6 @@ def main():
     print(f"{'Simplified Category':<40} {'Count':<10} {'Percentage':<10}")
     print("-" * 80)
     
-    # Sort by count descending for better readability
     for category in sorted(simplified_counts.keys(), key=lambda x: simplified_counts[x], reverse=True):
         count = simplified_counts[category]
         percentage = (count / total_simplified_instances * 100) if total_simplified_instances > 0 else 0

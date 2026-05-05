@@ -7,13 +7,15 @@ import numpy as np
 # Value (V) range is 0-255
 
 COLOR_THRESHOLDS = {
-    "regular_oil_cyan": {
-        # Based on HSL(162-167, 49-53%, 87-92%)
-        # Hue: safely set between 75 and 95 (OpenCV) to avoid Dark Blue (118) and Purple (130)
-        # Saturation: 100 to 255 to capture vibrant colors
-        # Value: 200 to 255 to capture high brightness of fluorescence
-        "lower": np.array([75, 100, 200]),
-        "upper": np.array([95, 255, 255])
+    "hydrocarbon_cyan": {
+        # Captures the cyan/teal/light-blue UV fluorescence of oil-bearing rocks.
+        # Hue 73-110 covers green-cyan (H~77) through blue-cyan (H~101),
+        #   with ±6 buffer on each side from observed extremes.
+        # Saturation 15-255 catches even very pale/desaturated fluorescence (S~20).
+        # Value 180-255 ensures only bright fluorescent zones are detected,
+        #   safely excluding dark non-hydrocarbon rocks (V~94-143).
+        "lower": np.array([73, 15, 180]),
+        "upper": np.array([110, 255, 255])
     },
     "oil_yellow": {
         # Based on article values: Hue 0.14-0.18, Saturation 0.05-1.0, Value 0.17-1.0

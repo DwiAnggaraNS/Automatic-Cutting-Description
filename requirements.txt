@@ -29,3 +29,6 @@ shapely>=2.0.0
 tqdm>=4.66.0
 pyyaml>=6.0
 requests>=2.31.0
+
+# widgets
+ipywidgets>=8.0.0

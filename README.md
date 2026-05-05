@@ -17,6 +17,7 @@ This project supports two core architectural approaches for training and inferen
 
 ### Key Features
 - **Instance Segmentation** — Multi-class rock type detection using YOLOv12
+- **UV Hydrocarbon Segmentation** — Fluorescence-based rock class isolation utilizing exact HSV thresholding and academic validation thresholds (`P >= 100`)
 - **SAM Integration** — Semi-automated annotation via CVAT + Segment Anything Model
 - **Custom Callbacks** — Early stopping and model checkpoint management
 - **Minority Class Augmentation** — Synthetic data generation for imbalanced datasets
@@ -52,12 +53,15 @@ automatic-cutting-description/
 │   │   └── YOLO_Trainer_Original.ipynb  # Reference/baseline notebook
 │   ├── tuning/
 │   │   ├── Detectron2_Hyperparameter_Tuner.ipynb # Detectron2 Optuna tuning
-│   │   └── YOLO_Hyperparameter_Tuner.ipynb       # YOLO Optuna tuning
+│   │   ├── YOLO_Hyperparameter_Tuner.ipynb       # YOLO Optuna tuning
+|   |   └── YOLO_Inference_Params_Tuning.ipynb  # YOLO Inference Parameter (conf, iou, imgsize, etc) Tuning
 │   └── evaluation/
-│       ├── Independent_Evaluator.ipynb  # Model evaluation & metrics
-│       └── Interactive_Inference.ipynb  # Single image test inference & mask exploration
+│       └── Independent_Evaluator.ipynb  # Model evaluation & metrics
 │   └── exploration/
-│       └── YOLO_Visualizer.ipynb        # Training visualization & comparison
+│       ├── YOLO_Visualizer.ipynb        # Training visualization & comparison
+│       └── hydrocarbon-color-segementation/
+│           ├── Hydrocarbon_Color_Segmentation.ipynb  # UV Fluorescence rock segmentation
+│           └── color_config.py                       # Color thresholds configuration
 │
 ├── datasets/                       # Dataset processing and SAM Annotation
 │   ├── generate-dataset/

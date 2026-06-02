@@ -17,7 +17,7 @@ This project supports two core architectural approaches for training and inferen
 
 ### Key Features
 - **Instance Segmentation** — Multi-class rock type detection using YOLOv12
-- **UV Hydrocarbon Segmentation** — Fluorescence-based rock class isolation utilizing exact HSV thresholding and academic validation thresholds (`P >= 100`)
+- **UV Hydrocarbon & Cement Segmentation** — Automated, extensible color thresholding framework designed to extract fluorescence-induced and indicator-stained rock classes utilizing exact HSV threshold computation.
 - **SAM Integration** — Semi-automated annotation via CVAT + Segment Anything Model
 - **Custom Callbacks** — Early stopping and model checkpoint management
 - **Minority Class Augmentation** — Synthetic data generation for imbalanced datasets
@@ -59,9 +59,13 @@ automatic-cutting-description/
 │       └── Independent_Evaluator.ipynb  # Model evaluation & metrics
 │   └── exploration/
 │       ├── YOLO_Visualizer.ipynb        # Training visualization & comparison
-│       └── hydrocarbon-color-segementation/
-│           ├── Hydrocarbon_Color_Segmentation.ipynb  # UV Fluorescence rock segmentation
-│           └── color_config.py                       # Color thresholds configuration
+│       └── color-segementation/
+│           ├── Color_Segmentation_Demo.ipynb  # Interactive rock segmentation
+│           ├── Auto_Color_Thresholding.ipynb   # OpenCV auto threshold calculator utility
+│           ├── base_segmentation.py           # Core thresholding functionality
+│           ├── color_utils.py                 # Color conversions
+│           ├── cement/                        # Phenolphthalein models
+│           └── hydrocarbon/                   # UV Fluorescence models
 │
 ├── datasets/                       # Dataset processing and SAM Annotation
 │   ├── generate-dataset/
@@ -187,6 +191,7 @@ notebooks/evaluation/Interactive_Inference.ipynb     (visual & post-processing U
 
 | Document | Description |
 |----------|-------------|
+| [Color Segmentation Guide](docs/guides/Color_Segmentation_Guide.md) | Recalibrate and implement OOP color thresholding logic for HC/Cement. |
 | [Semi-automated annotation via CVAT + Segment Anything Model Guide](docs/guides/sam_autoannotation.md) | Environment Setup, Configuration, and Annotation Workflow |
 | [YOLO Trainer Guide](docs/guides/YOLO_Trainer_Guide.md) | Training workflow & configuration |
 | [CVAT + SAM Installation Guide](docs/guides/CVAT_SAM_Installation_Guide.md) | Annotation toolchain setup |
